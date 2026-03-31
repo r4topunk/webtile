@@ -1,10 +1,11 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { useSceneStore } from "@/store/scene-store"
-import type { Vec3 } from "@/lib/types"
+import { useEditorStore } from "@/store/editor-store"
+import type { SceneObject, Vec3 } from "@/lib/types"
 
 function Vec3Input({
   label,
@@ -116,8 +117,87 @@ export function PropertiesPanel() {
       <Separator />
 
       <div className="text-[10px] text-muted-foreground">
-        Faces: {obj.faces.length}
+        Faces: {obj.faces.length} | Vertices: {obj.faces.length * 4}
       </div>
+
+      <SubObjectInfo obj={obj} />
     </div>
   )
+}
+
+function SubObjectInfo({ obj }: { obj: SceneObject }) {
+  const mode = useEditorStore((s) => s.mode)
+  const selectedFaceIds = useSceneStore((s) => s.selectedFaceIds)
+  const selectedVertexIndices = useSceneStore((s) => s.selectedVertexIndices)
+  const selectedEdgeIndices = useSceneStore((s) => s.selectedEdgeIndices)
+
+  // Get selected vertex positions
+  const selectedVertexPositions = useMemo(() => {
+    if (mode !== "vertex" || selectedVertexIndices.length === 0) return []
+    const result: { index: number; pos: Vec3 }[] = []
+    const indexSet = new Set(selectedVertexIndices)
+    let vi = 0
+    for (const face of obj.faces) {
+      for (const v of face.vertices) {
+        if (indexSet.has(vi)) {
+          result.push({ index: vi, pos: v })
+        }
+        vi++
+      }
+    }
+    return result
+  }, [mode, selectedVertexIndices, obj.faces])
+
+  if (mode === "face" && selectedFaceIds.length > 0) {
+    return (
+      <div className="space-y-1">
+        <Separator />
+        <div className="text-[10px] font-medium uppercase text-muted-foreground">
+          Selected Faces: {selectedFaceIds.length}
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          E to extrude | Del to delete
+        </div>
+      </div>
+    )
+  }
+
+  if (mode === "vertex" && selectedVertexPositions.length > 0) {
+    return (
+      <div className="space-y-1">
+        <Separator />
+        <div className="text-[10px] font-medium uppercase text-muted-foreground">
+          Selected Vertices: {selectedVertexPositions.length}
+        </div>
+        {selectedVertexPositions.slice(0, 4).map((v) => (
+          <div key={v.index} className="grid grid-cols-3 gap-0.5 text-[10px] font-mono text-muted-foreground">
+            <span>{v.pos[0].toFixed(2)}</span>
+            <span>{v.pos[1].toFixed(2)}</span>
+            <span>{v.pos[2].toFixed(2)}</span>
+          </div>
+        ))}
+        {selectedVertexPositions.length > 4 && (
+          <div className="text-[10px] text-muted-foreground">
+            +{selectedVertexPositions.length - 4} more
+          </div>
+        )}
+        <div className="text-[10px] text-muted-foreground">
+          Drag to move | Shift+drag for axis lock
+        </div>
+      </div>
+    )
+  }
+
+  if (mode === "edge" && selectedEdgeIndices.length > 0) {
+    return (
+      <div className="space-y-1">
+        <Separator />
+        <div className="text-[10px] font-medium uppercase text-muted-foreground">
+          Selected Edges: {selectedEdgeIndices.length}
+        </div>
+      </div>
+    )
+  }
+
+  return null
 }
