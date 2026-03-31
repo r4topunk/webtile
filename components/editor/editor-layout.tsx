@@ -2,7 +2,8 @@
 
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TopBar } from "./top-bar"
+import { EditorMenuBar } from "./menu-bar"
+import { LeftToolbar } from "./left-toolbar"
 import { StatusBar } from "./status-bar"
 import { Viewport } from "@/components/viewport/viewport"
 import { TilesetPanel } from "@/components/tileset/tileset-panel"
@@ -13,27 +14,43 @@ import { AutosaveRestoreDialog } from "@/components/dialogs/autosave-restore-dia
 import { Timeline } from "@/components/animation/timeline"
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
 import { useAutoSave } from "@/hooks/use-auto-save"
-import { Separator } from "@/components/ui/separator"
 
 export default function EditorLayout() {
   useKeyboardShortcuts()
   useAutoSave()
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={200}>
       <div className="grid h-screen w-screen grid-rows-[auto_1fr_auto_auto] overflow-hidden">
-        <TopBar />
-        <div className="grid min-h-0 grid-cols-[1fr_280px]">
+        {/* Menu bar */}
+        <EditorMenuBar />
+
+        {/* Main area: left toolbar + viewport + right sidebar */}
+        <div className="grid min-h-0 grid-cols-[auto_1fr_280px]">
+          {/* Left toolbar */}
+          <LeftToolbar />
+
+          {/* Viewport */}
           <div className="min-w-0 overflow-hidden">
             <Viewport />
           </div>
+
+          {/* Right sidebar — tabbed panels */}
           <div className="flex h-full flex-col overflow-hidden border-l">
             <Tabs defaultValue="tileset" className="flex h-full flex-col gap-0">
               <TabsList className="w-full shrink-0 rounded-none">
-                <TabsTrigger value="tileset">Tileset</TabsTrigger>
-                <TabsTrigger value="layers">Layers</TabsTrigger>
-                <TabsTrigger value="properties">Properties</TabsTrigger>
-                <TabsTrigger value="uv">UV</TabsTrigger>
+                <TabsTrigger value="tileset" className="text-xs">
+                  Tileset
+                </TabsTrigger>
+                <TabsTrigger value="layers" className="text-xs">
+                  Scene
+                </TabsTrigger>
+                <TabsTrigger value="properties" className="text-xs">
+                  Props
+                </TabsTrigger>
+                <TabsTrigger value="uv" className="text-xs">
+                  UV
+                </TabsTrigger>
               </TabsList>
               <TabsContent
                 value="tileset"
@@ -62,7 +79,11 @@ export default function EditorLayout() {
             </Tabs>
           </div>
         </div>
+
+        {/* Timeline */}
         <Timeline />
+
+        {/* Status bar */}
         <StatusBar />
       </div>
       <AutosaveRestoreDialog />
