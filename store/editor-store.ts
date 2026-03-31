@@ -17,6 +17,7 @@ interface EditorState {
   snapSize: number
   cameraPreset: CameraPreset
   showTimeline: boolean
+  focusTarget: [number, number, number] | null
 
   setTool: (tool: EditorTool) => void
   setMode: (mode: EditMode) => void
@@ -35,6 +36,7 @@ interface EditorState {
   setSnapSize: (size: number) => void
   setCameraPreset: (preset: CameraPreset) => void
   toggleTimeline: () => void
+  setFocusTarget: (target: [number, number, number] | null) => void
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -51,6 +53,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   snapSize: 1,
   cameraPreset: null,
   showTimeline: false,
+  focusTarget: null,
 
   setTool: (tool) => set({ tool }),
   setMode: (mode) => set({ mode }),
@@ -72,4 +75,5 @@ export const useEditorStore = create<EditorState>((set) => ({
   setSnapSize: (snapSize) => set({ snapSize: Math.max(0.1, snapSize) }),
   setCameraPreset: (cameraPreset) => set({ cameraPreset }),
   toggleTimeline: () => set((s) => ({ showTimeline: !s.showTimeline })),
+  setFocusTarget: (focusTarget) => set({ focusTarget }),
 }))

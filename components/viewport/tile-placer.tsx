@@ -1,7 +1,7 @@
 "use client"
 
-import { useRef, useState, useMemo, useEffect } from "react"
-import { useThree } from "@react-three/fiber"
+import { useRef, useState, useMemo, useEffect, useCallback } from "react"
+import { useThree, useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import { useEditorStore } from "@/store/editor-store"
 import { useSceneStore } from "@/store/scene-store"
@@ -11,29 +11,21 @@ import { loadTilesetTexture } from "@/lib/texture-utils"
 import type { PlacementPlane } from "@/lib/types"
 
 /**
- * Build a THREE.Plane for the given placement plane + offset.
+ * Build an infinite THREE.Plane for the given placement plane + offset.
+ * This is purely mathematical — no physical mesh needed for raycasting.
  */
 function buildPlane(plane: PlacementPlane, offset: number): THREE.Plane {
   switch (plane) {
     case "xz":
-      // normal +Y, d = -offset (plane at y=offset)
       return new THREE.Plane(new THREE.Vector3(0, 1, 0), -offset)
     case "xy":
-      // normal +Z, d = -offset (plane at z=offset)
       return new THREE.Plane(new THREE.Vector3(0, 0, 1), -offset)
     case "yz":
-      // normal +X, d = -offset (plane at x=offset)
       return new THREE.Plane(new THREE.Vector3(1, 0, 0), -offset)
   }
 }
 
-/**
- * Extract two grid coords from a 3D intersection point based on the plane.
- */
-function toGridCoords(
-  hit: THREE.Vector3,
-  plane: PlacementPlane,
-): [number, number] {
+function toGridCoords(hit: THREE.Vector3, plane: PlacementPlane): [number, number] {
   switch (plane) {
     case "xz":
       return [Math.floor(hit.x), Math.floor(hit.z)]
@@ -44,10 +36,7 @@ function toGridCoords(
   }
 }
 
-/**
- * Convert grid coords + plane + offset back to a 3D world position for the ghost mesh center.
- */
-function ghostPosition(
+function ghostWorldPos(
   gridA: number,
   gridB: number,
   plane: PlacementPlane,
@@ -55,20 +44,15 @@ function ghostPosition(
 ): [number, number, number] {
   switch (plane) {
     case "xz":
-      return [gridA + 0.5, offset + 0.001, gridB + 0.5]
+      return [gridA + 0.5, offset + 0.002, gridB + 0.5]
     case "xy":
-      return [gridA + 0.5, gridB + 0.5, offset + 0.001]
+      return [gridA + 0.5, gridB + 0.5, offset + 0.002]
     case "yz":
-      return [offset + 0.001, gridA + 0.5, gridB + 0.5]
+      return [offset + 0.002, gridA + 0.5, gridB + 0.5]
   }
 }
 
-/**
- * Rotation euler for the ghost PlaneGeometry so it faces the correct direction.
- */
-function ghostRotation(
-  plane: PlacementPlane,
-): [number, number, number] {
+function ghostRotation(plane: PlacementPlane): [number, number, number] {
   switch (plane) {
     case "xz":
       return [-Math.PI / 2, 0, 0]
@@ -79,29 +63,14 @@ function ghostRotation(
   }
 }
 
-/** Build the invisible raycast target mesh props for the current plane */
-function raycastMeshProps(plane: PlacementPlane, offset: number) {
-  switch (plane) {
-    case "xz":
-      return {
-        rotation: [-Math.PI / 2, 0, 0] as [number, number, number],
-        position: [0, offset - 0.002, 0] as [number, number, number],
-      }
-    case "xy":
-      return {
-        rotation: [0, 0, 0] as [number, number, number],
-        position: [0, 0, offset - 0.002] as [number, number, number],
-      }
-    case "yz":
-      return {
-        rotation: [0, Math.PI / 2, 0] as [number, number, number],
-        position: [offset - 0.002, 0, 0] as [number, number, number],
-      }
-  }
-}
-
 const _intersect = new THREE.Vector3()
+const _raycaster = new THREE.Raycaster()
 
+/**
+ * TilePlacer uses useFrame to continuously raycast the mouse position against
+ * the infinite mathematical placement plane. No physical mesh needed — this
+ * means the ghost preview tracks the mouse perfectly regardless of camera angle.
+ */
 export function TilePlacer() {
   const tool = useEditorStore((s) => s.tool)
   const placementPlane = useEditorStore((s) => s.placementPlane)
@@ -111,60 +80,93 @@ export function TilePlacer() {
   const placeNewTile = useSceneStore((s) => s.placeNewTile)
 
   const [ghostPos, setGhostPos] = useState<[number, number] | null>(null)
-  const meshRef = useRef<THREE.Mesh>(null)
-  const { camera, raycaster, pointer } = useThree()
+  const ghostPosRef = useRef<[number, number] | null>(null)
+  const { camera, pointer, gl } = useThree()
 
   const threePlane = useMemo(
     () => buildPlane(placementPlane, placementOffset),
     [placementPlane, placementOffset],
   )
 
-  function getGridPosition(): [number, number] | null {
-    raycaster.setFromCamera(pointer, camera)
-    const hit = raycaster.ray.intersectPlane(threePlane, _intersect)
-    if (!hit) return null
-    return toGridCoords(hit, placementPlane)
-  }
-
-  function handlePointerMove() {
+  // Continuously raycast against the infinite plane every frame
+  useFrame(() => {
     if (tool !== "place" || !selectedTile) {
-      setGhostPos(null)
+      if (ghostPosRef.current !== null) {
+        ghostPosRef.current = null
+        setGhostPos(null)
+      }
       return
     }
-    setGhostPos(getGridPosition())
-  }
 
-  function handleClick() {
-    if (tool !== "place" || !selectedTile) return
-    const pos = getGridPosition()
-    if (!pos) return
-
-    const tileset = tilesets[selectedTile.tilesetId]
-    if (!tileset) return
-
-    // Multi-tile region: place one SceneFace per tile in the region
-    for (let dy = 0; dy < selectedTile.h; dy++) {
-      for (let dx = 0; dx < selectedTile.w; dx++) {
-        const singleTileRef = {
-          tilesetId: selectedTile.tilesetId,
-          x: selectedTile.x + dx,
-          y: selectedTile.y + dy,
-          w: 1,
-          h: 1,
-        }
-        const face = createTileFace(
-          pos[0] + dx,
-          pos[1] + dy,
-          singleTileRef,
-          tileset.columns,
-          tileset.rows,
-          placementPlane,
-          placementOffset,
-        )
-        placeNewTile(face)
+    _raycaster.setFromCamera(pointer, camera)
+    const hit = _raycaster.ray.intersectPlane(threePlane, _intersect)
+    if (!hit) {
+      if (ghostPosRef.current !== null) {
+        ghostPosRef.current = null
+        setGhostPos(null)
       }
+      return
     }
-  }
+
+    const gridPos = toGridCoords(hit, placementPlane)
+    // Only update React state if position actually changed (avoid re-renders)
+    if (
+      !ghostPosRef.current ||
+      ghostPosRef.current[0] !== gridPos[0] ||
+      ghostPosRef.current[1] !== gridPos[1]
+    ) {
+      ghostPosRef.current = gridPos
+      setGhostPos(gridPos)
+    }
+  })
+
+  // Click handler on the canvas DOM element
+  const handleClick = useCallback(
+    (e: MouseEvent) => {
+      // Only handle left clicks
+      if (e.button !== 0) return
+      if (tool !== "place" || !selectedTile) return
+
+      _raycaster.setFromCamera(pointer, camera)
+      const hit = _raycaster.ray.intersectPlane(threePlane, _intersect)
+      if (!hit) return
+
+      const pos = toGridCoords(hit, placementPlane)
+      const tileset = tilesets[selectedTile.tilesetId]
+      if (!tileset) return
+
+      // Multi-tile region: place one face per tile
+      for (let dy = 0; dy < selectedTile.h; dy++) {
+        for (let dx = 0; dx < selectedTile.w; dx++) {
+          const singleTileRef = {
+            tilesetId: selectedTile.tilesetId,
+            x: selectedTile.x + dx,
+            y: selectedTile.y + dy,
+            w: 1,
+            h: 1,
+          }
+          const face = createTileFace(
+            pos[0] + dx,
+            pos[1] + dy,
+            singleTileRef,
+            tileset.columns,
+            tileset.rows,
+            placementPlane,
+            placementOffset,
+          )
+          placeNewTile(face)
+        }
+      }
+    },
+    [tool, selectedTile, tilesets, placementPlane, placementOffset, placeNewTile, pointer, camera, threePlane],
+  )
+
+  // Attach click listener directly to the canvas DOM element
+  useEffect(() => {
+    const canvas = gl.domElement
+    canvas.addEventListener("click", handleClick)
+    return () => canvas.removeEventListener("click", handleClick)
+  }, [gl, handleClick])
 
   // Ghost preview texture
   const ghostTexture = useMemo(() => {
@@ -174,8 +176,7 @@ export function TilePlacer() {
     return loadTilesetTexture(tileset.imageUrl)
   }, [selectedTile, tilesets])
 
-  // Ghost geometry with UVs matching PlaneGeometry vertex order: TL, TR, BL, BR
-  // Sized to cover the full multi-tile region
+  // Ghost geometry with UVs for PlaneGeometry vertex order: TL, TR, BL, BR
   const ghostGeometry = useMemo(() => {
     if (!selectedTile) return null
     const tileset = tilesets[selectedTile.tilesetId]
@@ -187,65 +188,39 @@ export function TilePlacer() {
     const v1 = 1 - selectedTile.y / rows
 
     const geo = new THREE.PlaneGeometry(selectedTile.w, selectedTile.h)
-    // PlaneGeometry vertices: TL(0), TR(1), BL(2), BR(3)
     geo.setAttribute(
       "uv",
       new THREE.Float32BufferAttribute(
-        new Float32Array([
-          u0, v1, // TL
-          u1, v1, // TR
-          u0, v0, // BL
-          u1, v0, // BR
-        ]),
+        new Float32Array([u0, v1, u1, v1, u0, v0, u1, v0]),
         2,
       ),
     )
     return geo
   }, [selectedTile, tilesets])
 
-  // Dispose old ghost geometry
   useEffect(() => {
-    return () => {
-      ghostGeometry?.dispose()
-    }
+    return () => { ghostGeometry?.dispose() }
   }, [ghostGeometry])
 
-  const rcProps = raycastMeshProps(placementPlane, placementOffset)
+  if (!ghostPos || !ghostTexture || !ghostGeometry || !selectedTile) return null
 
   return (
-    <>
-      {/* Transparent plane for raycasting — must be visible for R3F events */}
-      <mesh
-        rotation={rcProps.rotation}
-        position={rcProps.position}
-        onPointerMove={handlePointerMove}
-        onClick={handleClick}
-      >
-        <planeGeometry args={[100, 100]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-
-      {/* Ghost preview */}
-      {ghostPos && ghostTexture && ghostGeometry && selectedTile && (
-        <mesh
-          ref={meshRef}
-          geometry={ghostGeometry}
-          position={ghostPosition(
-            ghostPos[0] + (selectedTile.w - 1) / 2,
-            ghostPos[1] + (selectedTile.h - 1) / 2,
-            placementPlane,
-            placementOffset,
-          )}
-          rotation={ghostRotation(placementPlane)}
-        >
-          <meshBasicMaterial
-            map={ghostTexture}
-            transparent
-            opacity={0.5}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
+    <mesh
+      geometry={ghostGeometry}
+      position={ghostWorldPos(
+        ghostPos[0] + (selectedTile.w - 1) / 2,
+        ghostPos[1] + (selectedTile.h - 1) / 2,
+        placementPlane,
+        placementOffset,
       )}
-    </>
+      rotation={ghostRotation(placementPlane)}
+    >
+      <meshBasicMaterial
+        map={ghostTexture}
+        transparent
+        opacity={0.5}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
   )
 }

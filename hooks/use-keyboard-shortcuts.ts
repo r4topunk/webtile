@@ -78,6 +78,30 @@ export function useKeyboardShortcuts() {
         case "P":
           editorState.setTool("paint")
           break
+        case "f":
+        case "F": {
+          // Focus camera on selected object
+          const { selectedIds, objects } = sceneState
+          if (selectedIds.length === 1) {
+            const obj = objects[selectedIds[0]]
+            if (obj) {
+              // Compute center of the object's faces
+              let cx = 0, cy = 0, cz = 0, count = 0
+              for (const face of obj.faces) {
+                for (const v of face.vertices) {
+                  cx += v[0] + obj.position[0]
+                  cy += v[1] + obj.position[1]
+                  cz += v[2] + obj.position[2]
+                  count++
+                }
+              }
+              if (count > 0) {
+                editorState.setFocusTarget([cx / count, cy / count, cz / count])
+              }
+            }
+          }
+          break
+        }
         case "Tab": {
           e.preventDefault()
           const modeOrder: Array<"object" | "face" | "vertex" | "edge"> = [

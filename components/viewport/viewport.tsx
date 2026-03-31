@@ -68,6 +68,60 @@ function CameraPresetAnimator() {
 }
 
 /**
+ * Focus camera on a target point when focusTarget is set in the editor store.
+ * Smoothly moves the orbit target (what the camera looks at) to the point.
+ * Camera keeps its current distance and angle.
+ */
+function FocusAnimator() {
+  const animatingRef = useRef(false)
+  const startTargetRef = useRef(new THREE.Vector3())
+  const endTargetRef = useRef(new THREE.Vector3())
+  const startPosRef = useRef(new THREE.Vector3())
+  const endPosRef = useRef(new THREE.Vector3())
+  const progressRef = useRef(0)
+
+  const { camera } = useThree()
+  const controls = useThree((s) => s.controls) as unknown as {
+    target: THREE.Vector3
+    update: () => void
+  } | null
+
+  useFrame((_, delta) => {
+    const { focusTarget, setFocusTarget } = useEditorStore.getState()
+
+    if (focusTarget && controls) {
+      const target = new THREE.Vector3(...focusTarget)
+      // Compute camera offset from current target
+      const offset = camera.position.clone().sub(controls.target)
+
+      startTargetRef.current.copy(controls.target)
+      endTargetRef.current.copy(target)
+      startPosRef.current.copy(camera.position)
+      endPosRef.current.copy(target.clone().add(offset))
+      progressRef.current = 0
+      animatingRef.current = true
+      setFocusTarget(null)
+    }
+
+    if (!animatingRef.current || !controls) return
+
+    progressRef.current = Math.min(1, progressRef.current + delta / 0.3)
+    const t = progressRef.current
+    const ease = t * t * (3 - 2 * t)
+
+    controls.target.lerpVectors(startTargetRef.current, endTargetRef.current, ease)
+    camera.position.lerpVectors(startPosRef.current, endPosRef.current, ease)
+    controls.update()
+
+    if (t >= 1) {
+      animatingRef.current = false
+    }
+  })
+
+  return null
+}
+
+/**
  * Custom trackpad handler for macOS-friendly navigation.
  *
  * macOS trackpad gestures in browsers:
@@ -178,6 +232,7 @@ export function Viewport() {
           }}
         />
         <TrackpadHandler />
+        <FocusAnimator />
         <Scene />
         <AnimationPlayer />
         <CameraPresetAnimator />
