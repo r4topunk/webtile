@@ -8,9 +8,76 @@ import { useSceneStore } from "@/store/scene-store"
 import { useTilesetStore } from "@/store/tileset-store"
 import { createTileFace } from "@/lib/geometry"
 import { loadTilesetTexture } from "@/lib/texture-utils"
+import type { PlacementPlane } from "@/lib/types"
 
-const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
-const _intersect = new THREE.Vector3()
+/**
+ * Build a THREE.Plane for the given placement plane + offset.
+ */
+function buildPlane(plane: PlacementPlane, offset: number): THREE.Plane {
+  switch (plane) {
+    case "xz":
+      // normal +Y, d = -offset (plane at y=offset)
+      return new THREE.Plane(new THREE.Vector3(0, 1, 0), -offset)
+    case "xy":
+      // normal +Z, d = -offset (plane at z=offset)
+      return new THREE.Plane(new THREE.Vector3(0, 0, 1), -offset)
+    case "yz":
+      // normal +X, d = -offset (plane at x=offset)
+      return new THREE.Plane(new THREE.Vector3(1, 0, 0), -offset)
+  }
+}
+
+/**
+ * Extract two grid coords from a 3D intersection point based on the plane.
+ */
+function toGridCoords(
+  hit: THREE.Vector3,
+  plane: PlacementPlane,
+): [number, number] {
+  switch (plane) {
+    case "xz":
+      return [Math.floor(hit.x), Math.floor(hit.z)]
+    case "xy":
+      return [Math.floor(hit.x), Math.floor(hit.y)]
+    case "yz":
+      return [Math.floor(hit.y), Math.floor(hit.z)]
+  }
+}
+
+/**
+ * Convert grid coords + plane + offset back to a 3D world position for the ghost mesh center.
+ */
+function ghostPosition(
+  gridA: number,
+  gridB: number,
+  plane: PlacementPlane,
+  offset: number,
+): [number, number, number] {
+  switch (plane) {
+    case "xz":
+      return [gridA + 0.5, offset + 0.001, gridB + 0.5]
+    case "xy":
+      return [gridA + 0.5, gridB + 0.5, offset + 0.001]
+    case "yz":
+      return [offset + 0.001, gridA + 0.5, gridB + 0.5]
+  }
+}
+
+/**
+ * Rotation euler for the ghost PlaneGeometry so it faces the correct direction.
+ */
+function ghostRotation(
+  plane: PlacementPlane,
+): [number, number, number] {
+  switch (plane) {
+    case "xz":
+      return [-Math.PI / 2, 0, 0]
+    case "xy":
+      return [0, 0, 0]
+    case "yz":
+      return [0, Math.PI / 2, 0]
+  }
+}
 
 /**
  * PlaneGeometry vertex order (1x1, 1 segment):
@@ -24,8 +91,33 @@ function makeGhostGeometry(uvs: Float32Array): THREE.PlaneGeometry {
   return geo
 }
 
+/** Build the invisible raycast target mesh props for the current plane */
+function raycastMeshProps(plane: PlacementPlane, offset: number) {
+  switch (plane) {
+    case "xz":
+      return {
+        rotation: [-Math.PI / 2, 0, 0] as [number, number, number],
+        position: [0, offset - 0.002, 0] as [number, number, number],
+      }
+    case "xy":
+      return {
+        rotation: [0, 0, 0] as [number, number, number],
+        position: [0, 0, offset - 0.002] as [number, number, number],
+      }
+    case "yz":
+      return {
+        rotation: [0, Math.PI / 2, 0] as [number, number, number],
+        position: [offset - 0.002, 0, 0] as [number, number, number],
+      }
+  }
+}
+
+const _intersect = new THREE.Vector3()
+
 export function TilePlacer() {
   const tool = useEditorStore((s) => s.tool)
+  const placementPlane = useEditorStore((s) => s.placementPlane)
+  const placementOffset = useEditorStore((s) => s.placementOffset)
   const selectedTile = useTilesetStore((s) => s.selectedTile)
   const tilesets = useTilesetStore((s) => s.tilesets)
   const placeNewTile = useSceneStore((s) => s.placeNewTile)
@@ -34,11 +126,16 @@ export function TilePlacer() {
   const meshRef = useRef<THREE.Mesh>(null)
   const { camera, raycaster, pointer } = useThree()
 
+  const threePlane = useMemo(
+    () => buildPlane(placementPlane, placementOffset),
+    [placementPlane, placementOffset],
+  )
+
   function getGridPosition(): [number, number] | null {
     raycaster.setFromCamera(pointer, camera)
-    const hit = raycaster.ray.intersectPlane(floorPlane, _intersect)
+    const hit = raycaster.ray.intersectPlane(threePlane, _intersect)
     if (!hit) return null
-    return [Math.floor(hit.x), Math.floor(hit.z)]
+    return toGridCoords(hit, placementPlane)
   }
 
   function handlePointerMove() {
@@ -63,6 +160,8 @@ export function TilePlacer() {
       selectedTile,
       tileset.columns,
       tileset.rows,
+      placementPlane,
+      placementOffset,
     )
     placeNewTile(face)
   }
@@ -104,12 +203,14 @@ export function TilePlacer() {
     }
   }, [ghostGeometry])
 
+  const rcProps = raycastMeshProps(placementPlane, placementOffset)
+
   return (
     <>
-      {/* Transparent floor for raycasting — must be visible for R3F events */}
+      {/* Transparent plane for raycasting — must be visible for R3F events */}
       <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -0.002, 0]}
+        rotation={rcProps.rotation}
+        position={rcProps.position}
         onPointerMove={handlePointerMove}
         onClick={handleClick}
       >
@@ -122,8 +223,8 @@ export function TilePlacer() {
         <mesh
           ref={meshRef}
           geometry={ghostGeometry}
-          position={[ghostPos[0] + 0.5, 0.001, ghostPos[1] + 0.5]}
-          rotation={[-Math.PI / 2, 0, 0]}
+          position={ghostPosition(ghostPos[0], ghostPos[1], placementPlane, placementOffset)}
+          rotation={ghostRotation(placementPlane)}
         >
           <meshBasicMaterial
             map={ghostTexture}

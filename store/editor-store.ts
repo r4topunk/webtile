@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { CameraType, EditMode, EditorTool } from "@/lib/types"
+import type { CameraType, EditMode, EditorTool, PlacementPlane } from "@/lib/types"
 
 interface EditorState {
   tool: EditorTool
@@ -7,6 +7,8 @@ interface EditorState {
   cameraType: CameraType
   gridSize: number
   showGrid: boolean
+  placementPlane: PlacementPlane
+  placementOffset: number
 
   setTool: (tool: EditorTool) => void
   setMode: (mode: EditMode) => void
@@ -14,6 +16,10 @@ interface EditorState {
   toggleCameraType: () => void
   setGridSize: (size: number) => void
   toggleGrid: () => void
+  setPlacementPlane: (plane: PlacementPlane) => void
+  setPlacementOffset: (offset: number) => void
+  incrementPlacementOffset: () => void
+  decrementPlacementOffset: () => void
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -22,6 +28,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   cameraType: "orthographic",
   gridSize: 20,
   showGrid: true,
+  placementPlane: "xz",
+  placementOffset: 0,
 
   setTool: (tool) => set({ tool }),
   setMode: (mode) => set({ mode }),
@@ -32,4 +40,8 @@ export const useEditorStore = create<EditorState>((set) => ({
     })),
   setGridSize: (gridSize) => set({ gridSize }),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
+  setPlacementPlane: (placementPlane) => set({ placementPlane }),
+  setPlacementOffset: (placementOffset) => set({ placementOffset }),
+  incrementPlacementOffset: () => set((s) => ({ placementOffset: s.placementOffset + 1 })),
+  decrementPlacementOffset: () => set((s) => ({ placementOffset: s.placementOffset - 1 })),
 }))

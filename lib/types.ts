@@ -38,6 +38,7 @@ export type Tileset = {
   rows: number
 }
 
+export type PlacementPlane = "xz" | "xy" | "yz"
 export type EditorTool = "select" | "place" | "paint"
 export type EditMode = "object" | "face" | "vertex" | "edge"
 export type CameraType = "orthographic" | "perspective"

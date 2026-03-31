@@ -5,8 +5,11 @@ import { TopBar } from "./top-bar"
 import { StatusBar } from "./status-bar"
 import { Viewport } from "@/components/viewport/viewport"
 import { TilesetPanel } from "@/components/tileset/tileset-panel"
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
 
 export default function EditorLayout() {
+  useKeyboardShortcuts()
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="grid h-screen w-screen grid-rows-[auto_1fr_auto] overflow-hidden">

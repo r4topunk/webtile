@@ -1,11 +1,11 @@
 import * as THREE from "three"
-import type { SceneFace } from "./types"
+import type { PlacementPlane, SceneFace } from "./types"
 
 type Vec2 = [number, number]
 
 /**
  * Build a BufferGeometry from an array of quad faces.
- * Each face = 4 vertices → 2 triangles (6 indices).
+ * Each face = 4 vertices -> 2 triangles (6 indices).
  */
 export function buildGeometryFromFaces(faces: SceneFace[]): THREE.BufferGeometry {
   const positions: number[] = []
@@ -42,39 +42,63 @@ export function buildGeometryFromFaces(faces: SceneFace[]): THREE.BufferGeometry
 }
 
 /**
- * Create a single tile quad face on the XZ plane at a given grid position.
- * Vertex winding is counter-clockwise from above → normals point UP (+Y).
+ * Create a single tile quad face on the specified plane at a given grid position.
  *
- * Vertex order (viewed from above):
- *   v3 (x,z+1) --- v2 (x+1,z+1)
- *       |               |
- *   v0 (x,z)   --- v1 (x+1,z)
- *
- * Winding: v0 → v3 → v2 → v1 (CCW from +Y) — but we use index order
- * to control winding. Vertices stored as v0,v1,v2,v3 with indices
- * that produce CCW triangles from above.
+ * XZ plane: y = offset, vertices span X and Z, normals +Y
+ * XY plane: z = offset, vertices span X and Y, normals +Z
+ * YZ plane: x = offset, vertices span Y and Z, normals +X
  */
 export function createTileFace(
-  gridX: number,
-  gridZ: number,
+  gridA: number,
+  gridB: number,
   tileRef: SceneFace["tileRef"],
   tilesetColumns: number,
   tilesetRows: number,
+  plane: PlacementPlane = "xz",
+  offset: number = 0,
 ): SceneFace {
-  const y = 0
+  const uvs = computeTileUVs(tileRef, tilesetColumns, tilesetRows)
 
-  // Vertices in CCW order from above for upward normals
-  // v0: bottom-left, v1: top-left, v2: top-right, v3: bottom-right
+  let vertices: SceneFace["vertices"]
+
+  switch (plane) {
+    case "xz":
+      // y = offset, span X (gridA) and Z (gridB)
+      // Normals point +Y (CCW from above)
+      vertices = [
+        [gridA, offset, gridB],           // v0: bottom-left
+        [gridA, offset, gridB + 1],       // v1: top-left
+        [gridA + 1, offset, gridB + 1],   // v2: top-right
+        [gridA + 1, offset, gridB],       // v3: bottom-right
+      ]
+      break
+    case "xy":
+      // z = offset, span X (gridA) and Y (gridB)
+      // Normals point +Z (CCW from front)
+      vertices = [
+        [gridA, gridB, offset],           // v0: bottom-left
+        [gridA, gridB + 1, offset],       // v1: top-left
+        [gridA + 1, gridB + 1, offset],   // v2: top-right
+        [gridA + 1, gridB, offset],       // v3: bottom-right
+      ]
+      break
+    case "yz":
+      // x = offset, span Y (gridA) and Z (gridB)
+      // Normals point +X (CCW from right)
+      vertices = [
+        [offset, gridA, gridB],           // v0: bottom-left
+        [offset, gridA + 1, gridB],       // v1: top-left
+        [offset, gridA + 1, gridB + 1],   // v2: top-right
+        [offset, gridA, gridB + 1],       // v3: bottom-right
+      ]
+      break
+  }
+
   return {
     id: crypto.randomUUID(),
-    vertices: [
-      [gridX, y, gridZ],           // v0: bottom-left
-      [gridX, y, gridZ + 1],       // v1: top-left
-      [gridX + 1, y, gridZ + 1],   // v2: top-right
-      [gridX + 1, y, gridZ],       // v3: bottom-right
-    ],
+    vertices,
     tileRef,
-    uvs: computeTileUVs(tileRef, tilesetColumns, tilesetRows),
+    uvs,
   }
 }
 
