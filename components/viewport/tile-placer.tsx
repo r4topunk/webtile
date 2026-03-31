@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useMemo, useEffect, useCallback } from "react"
+import { useRef, useState, useMemo, useEffect } from "react"
 import { useThree, useFrame } from "@react-three/fiber"
 import * as THREE from "three"
 import { useEditorStore } from "@/store/editor-store"
@@ -10,10 +10,6 @@ import { createTileFace } from "@/lib/geometry"
 import { loadTilesetTexture } from "@/lib/texture-utils"
 import type { PlacementPlane } from "@/lib/types"
 
-/**
- * Build an infinite THREE.Plane for the given placement plane + offset.
- * This is purely mathematical — no physical mesh needed for raycasting.
- */
 function buildPlane(plane: PlacementPlane, offset: number): THREE.Plane {
   switch (plane) {
     case "xz":
@@ -63,14 +59,32 @@ function ghostRotation(plane: PlacementPlane): [number, number, number] {
   }
 }
 
-const _intersect = new THREE.Vector3()
-const _raycaster = new THREE.Raycaster()
+/**
+ * Raycast the current pointer position against the placement plane.
+ * Uses a fresh raycaster each call to avoid shared mutable state bugs.
+ */
+function raycastPlane(
+  pointer: THREE.Vector2,
+  camera: THREE.Camera,
+  plane: THREE.Plane,
+): THREE.Vector3 | null {
+  const raycaster = new THREE.Raycaster()
+  raycaster.setFromCamera(pointer, camera)
+  const hit = new THREE.Vector3()
+  return raycaster.ray.intersectPlane(plane, hit) ? hit : null
+}
 
 /**
- * TilePlacer uses useFrame to continuously raycast the mouse position against
- * the infinite mathematical placement plane. No physical mesh needed — this
- * means the ghost preview tracks the mouse perfectly regardless of camera angle.
+ * Convert a DOM MouseEvent to normalized device coordinates for the given canvas.
  */
+function eventToNDC(e: MouseEvent, canvas: HTMLCanvasElement): THREE.Vector2 {
+  const rect = canvas.getBoundingClientRect()
+  return new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1,
+  )
+}
+
 export function TilePlacer() {
   const tool = useEditorStore((s) => s.tool)
   const placementPlane = useEditorStore((s) => s.placementPlane)
@@ -88,7 +102,7 @@ export function TilePlacer() {
     [placementPlane, placementOffset],
   )
 
-  // Continuously raycast against the infinite plane every frame
+  // Ghost preview tracking via useFrame — uses R3F's pointer (always fresh)
   useFrame(() => {
     if (tool !== "place" || !selectedTile) {
       if (ghostPosRef.current !== null) {
@@ -98,8 +112,7 @@ export function TilePlacer() {
       return
     }
 
-    _raycaster.setFromCamera(pointer, camera)
-    const hit = _raycaster.ray.intersectPlane(threePlane, _intersect)
+    const hit = raycastPlane(pointer, camera, threePlane)
     if (!hit) {
       if (ghostPosRef.current !== null) {
         ghostPosRef.current = null
@@ -109,7 +122,6 @@ export function TilePlacer() {
     }
 
     const gridPos = toGridCoords(hit, placementPlane)
-    // Only update React state if position actually changed (avoid re-renders)
     if (
       !ghostPosRef.current ||
       ghostPosRef.current[0] !== gridPos[0] ||
@@ -120,28 +132,38 @@ export function TilePlacer() {
     }
   })
 
-  // Click handler on the canvas DOM element
-  const handleClick = useCallback(
-    (e: MouseEvent) => {
-      // Only handle left clicks
-      if (e.button !== 0) return
-      if (tool !== "place" || !selectedTile) return
+  // Click handler — computes NDC from the actual click event coordinates
+  // (not from R3F's pointer which may be stale in the callback closure)
+  useEffect(() => {
+    const canvas = gl.domElement
 
-      _raycaster.setFromCamera(pointer, camera)
-      const hit = _raycaster.ray.intersectPlane(threePlane, _intersect)
+    function handleClick(e: MouseEvent) {
+      if (e.button !== 0) return
+
+      const currentTool = useEditorStore.getState().tool
+      const currentTile = useTilesetStore.getState().selectedTile
+      if (currentTool !== "place" || !currentTile) return
+
+      const currentPlane = useEditorStore.getState().placementPlane
+      const currentOffset = useEditorStore.getState().placementOffset
+      const plane = buildPlane(currentPlane, currentOffset)
+
+      // Compute NDC from event coordinates, not from captured pointer
+      const ndc = eventToNDC(e, canvas)
+      const hit = raycastPlane(ndc, camera, plane)
       if (!hit) return
 
-      const pos = toGridCoords(hit, placementPlane)
-      const tileset = tilesets[selectedTile.tilesetId]
+      const pos = toGridCoords(hit, currentPlane)
+      const allTilesets = useTilesetStore.getState().tilesets
+      const tileset = allTilesets[currentTile.tilesetId]
       if (!tileset) return
 
-      // Multi-tile region: place one face per tile
-      for (let dy = 0; dy < selectedTile.h; dy++) {
-        for (let dx = 0; dx < selectedTile.w; dx++) {
+      for (let dy = 0; dy < currentTile.h; dy++) {
+        for (let dx = 0; dx < currentTile.w; dx++) {
           const singleTileRef = {
-            tilesetId: selectedTile.tilesetId,
-            x: selectedTile.x + dx,
-            y: selectedTile.y + dy,
+            tilesetId: currentTile.tilesetId,
+            x: currentTile.x + dx,
+            y: currentTile.y + dy,
             w: 1,
             h: 1,
           }
@@ -151,22 +173,17 @@ export function TilePlacer() {
             singleTileRef,
             tileset.columns,
             tileset.rows,
-            placementPlane,
-            placementOffset,
+            currentPlane,
+            currentOffset,
           )
-          placeNewTile(face)
+          useSceneStore.getState().placeNewTile(face)
         }
       }
-    },
-    [tool, selectedTile, tilesets, placementPlane, placementOffset, placeNewTile, pointer, camera, threePlane],
-  )
+    }
 
-  // Attach click listener directly to the canvas DOM element
-  useEffect(() => {
-    const canvas = gl.domElement
     canvas.addEventListener("click", handleClick)
     return () => canvas.removeEventListener("click", handleClick)
-  }, [gl, handleClick])
+  }, [gl, camera]) // Only depend on stable refs — reads fresh state inside
 
   // Ghost preview texture
   const ghostTexture = useMemo(() => {
