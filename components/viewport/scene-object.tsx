@@ -57,8 +57,11 @@ function VertexDots({ obj }: { obj: SceneObject }) {
   const { camera, raycaster, pointer } = useThree()
 
   const draggingRef = useRef(false)
-  const dragStartRef = useRef(new THREE.Vector3())
+  const dragOriginRef = useRef(new THREE.Vector3())  // world pos at drag start
   const dragPlaneRef = useRef(new THREE.Plane())
+  const accumulatedRef = useRef(new THREE.Vector3()) // raw accumulated delta
+  const appliedRef = useRef(new THREE.Vector3())     // what we've actually applied
+  const axisLockRef = useRef<"x" | "y" | "z" | null>(null)
 
   // Flatten all vertices with their global index
   const vertices = useMemo(() => {
@@ -78,14 +81,17 @@ function VertexDots({ obj }: { obj: SceneObject }) {
       e.stopPropagation()
       const store = useSceneStore.getState()
 
-      // Select vertex
+      // Shift+click = multi-select, don't start drag
       if (e.nativeEvent.shiftKey) {
         store.toggleVertexSelection(index)
-      } else if (!selectedSet.has(index)) {
+        return
+      }
+
+      if (!selectedSet.has(index)) {
         store.setSelectedVertices([index])
       }
 
-      // Start drag — create a plane perpendicular to camera at the vertex position
+      // Start drag
       const vertex = vertices.find((v) => v.index === index)
       if (!vertex) return
 
@@ -94,16 +100,27 @@ function VertexDots({ obj }: { obj: SceneObject }) {
       const point = new THREE.Vector3(...vertex.pos)
         .add(new THREE.Vector3(...obj.position))
       dragPlaneRef.current.setFromNormalAndCoplanarPoint(cameraDir, point)
-      dragStartRef.current.copy(point)
+      dragOriginRef.current.copy(point)
+      accumulatedRef.current.set(0, 0, 0)
+      appliedRef.current.set(0, 0, 0)
+      axisLockRef.current = null
       draggingRef.current = true
 
-      // Capture pointer for reliable drag
       ;(e.nativeEvent.target as HTMLElement).setPointerCapture(e.nativeEvent.pointerId)
     },
     [camera, obj.position, vertices, selectedSet],
   )
 
-  // Use useFrame for smooth dragging
+  /**
+   * Drag logic with snapping:
+   *
+   * - Grid snap (Ctrl held or snapEnabled): positions snap to snapSize grid
+   *   We accumulate raw delta, then compute snapped delta = round(accumulated/snap)*snap,
+   *   and apply only the difference from what we've already applied.
+   *
+   * - Axis lock (Shift held during drag): constrains to dominant movement axis.
+   *   Detected after 0.1 units of movement, then locks for rest of drag.
+   */
   useFrame(() => {
     if (!draggingRef.current) return
 
@@ -112,35 +129,107 @@ function VertexDots({ obj }: { obj: SceneObject }) {
     const hit = raycaster.ray.intersectPlane(dragPlaneRef.current, intersection)
     if (!hit) return
 
-    const delta: Vec3 = [
-      intersection.x - dragStartRef.current.x,
-      intersection.y - dragStartRef.current.y,
-      intersection.z - dragStartRef.current.z,
+    // Raw delta from drag origin
+    const rawDelta = intersection.clone().sub(dragOriginRef.current)
+
+    // Check if Shift is held → axis lock
+    const shiftHeld = window.event instanceof KeyboardEvent
+      ? (window.event as KeyboardEvent).shiftKey
+      : false
+    // We poll shift state via a separate check
+    const keys = { shift: false, ctrl: false }
+    // Use a simple polling approach
+    const pollKeys = () => {
+      // We stored keyboard state via listeners below
+      keys.shift = keyStateRef.current.shift
+      keys.ctrl = keyStateRef.current.ctrl
+    }
+    pollKeys()
+
+    // Axis lock: detect dominant axis after threshold
+    if (keys.shift && !axisLockRef.current) {
+      const ax = Math.abs(rawDelta.x)
+      const ay = Math.abs(rawDelta.y)
+      const az = Math.abs(rawDelta.z)
+      const max = Math.max(ax, ay, az)
+      if (max > 0.1) {
+        if (max === ax) axisLockRef.current = "x"
+        else if (max === ay) axisLockRef.current = "y"
+        else axisLockRef.current = "z"
+      }
+    }
+    // Clear axis lock if shift released
+    if (!keys.shift) axisLockRef.current = null
+
+    // Apply axis constraint
+    let constrained = rawDelta.clone()
+    if (axisLockRef.current) {
+      switch (axisLockRef.current) {
+        case "x": constrained.set(rawDelta.x, 0, 0); break
+        case "y": constrained.set(0, rawDelta.y, 0); break
+        case "z": constrained.set(0, 0, rawDelta.z); break
+      }
+    }
+
+    // Grid snapping
+    const { snapEnabled, snapSize } = useEditorStore.getState()
+    const shouldSnap = snapEnabled || keys.ctrl
+
+    let snapped: THREE.Vector3
+    if (shouldSnap && snapSize > 0) {
+      snapped = new THREE.Vector3(
+        Math.round(constrained.x / snapSize) * snapSize,
+        Math.round(constrained.y / snapSize) * snapSize,
+        Math.round(constrained.z / snapSize) * snapSize,
+      )
+    } else {
+      snapped = constrained
+    }
+
+    // Compute incremental delta (what to apply this frame)
+    const incrementalDelta: Vec3 = [
+      snapped.x - appliedRef.current.x,
+      snapped.y - appliedRef.current.y,
+      snapped.z - appliedRef.current.z,
     ]
 
-    // Only move if there's actual movement
-    if (Math.abs(delta[0]) < 0.001 && Math.abs(delta[1]) < 0.001 && Math.abs(delta[2]) < 0.001) return
+    if (Math.abs(incrementalDelta[0]) < 0.0001 &&
+        Math.abs(incrementalDelta[1]) < 0.0001 &&
+        Math.abs(incrementalDelta[2]) < 0.0001) return
 
     const store = useSceneStore.getState()
-    const indices = store.selectedVertexIndices.length > 0
-      ? store.selectedVertexIndices
-      : [] // nothing selected = nothing to move
-
+    const indices = store.selectedVertexIndices
     if (indices.length > 0) {
-      store.moveVertices(obj.id, indices, delta)
-      dragStartRef.current.copy(intersection)
+      store.moveVertices(obj.id, indices, incrementalDelta)
+      appliedRef.current.copy(snapped)
     }
   })
 
   const handlePointerUp = useCallback(() => {
     draggingRef.current = false
+    axisLockRef.current = null
   }, [])
 
-  // Listen for global pointer up to end drag
+  // Track keyboard state for shift/ctrl during drag
+  const keyStateRef = useRef({ shift: false, ctrl: false })
   useEffect(() => {
-    const handler = () => { draggingRef.current = false }
-    window.addEventListener("pointerup", handler)
-    return () => window.removeEventListener("pointerup", handler)
+    const down = (e: KeyboardEvent) => {
+      keyStateRef.current.shift = e.shiftKey
+      keyStateRef.current.ctrl = e.ctrlKey || e.metaKey
+    }
+    const up = (e: KeyboardEvent) => {
+      keyStateRef.current.shift = e.shiftKey
+      keyStateRef.current.ctrl = e.ctrlKey || e.metaKey
+    }
+    const pointerUp = () => { draggingRef.current = false }
+    window.addEventListener("keydown", down)
+    window.addEventListener("keyup", up)
+    window.addEventListener("pointerup", pointerUp)
+    return () => {
+      window.removeEventListener("keydown", down)
+      window.removeEventListener("keyup", up)
+      window.removeEventListener("pointerup", pointerUp)
+    }
   }, [])
 
   return (

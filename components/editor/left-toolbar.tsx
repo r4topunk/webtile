@@ -19,6 +19,7 @@ import {
   Minus,
   Pencil,
   MousePointer,
+  Magnet,
 } from "lucide-react"
 
 function ToolButton({
@@ -141,6 +142,39 @@ const planes: {
   { value: "yz", label: "YZ", shortcut: "3", description: "Side wall (X = offset)" },
 ]
 
+function SnapToggle() {
+  const snapEnabled = useEditorStore((s) => s.snapEnabled)
+  const toggleSnap = useEditorStore((s) => s.toggleSnap)
+  const snapSize = useEditorStore((s) => s.snapSize)
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={toggleSnap}
+          className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
+            snapEnabled
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          }`}
+        >
+          <Magnet size={ICON_SIZE} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        <div className="text-xs font-medium">
+          Grid Snap: {snapEnabled ? `ON (${snapSize})` : "OFF"}
+        </div>
+        <div className="text-[10px] text-muted-foreground">
+          Click to toggle. Hold Ctrl while dragging for temporary snap.
+          <br />
+          Hold Shift while dragging to lock to one axis.
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function LeftToolbar() {
   const tool = useEditorStore((s) => s.tool)
   const setTool = useEditorStore((s) => s.setTool)
@@ -233,6 +267,10 @@ export function LeftToolbar() {
       </Tooltip>
 
       <div className="flex-1" />
+
+      {/* Snap toggle at bottom */}
+      <Separator className="my-1.5 w-6" />
+      <SnapToggle />
     </div>
   )
 }
