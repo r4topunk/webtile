@@ -149,6 +149,7 @@ function VertexDots({ obj }: { obj: SceneObject }) {
         <mesh
           key={v.index}
           position={v.pos}
+          renderOrder={999}
           onPointerDown={(e) => handlePointerDown(e, v.index)}
           onPointerUp={handlePointerUp}
         >
@@ -156,6 +157,7 @@ function VertexDots({ obj }: { obj: SceneObject }) {
           <meshBasicMaterial
             color={selectedSet.has(v.index) ? "#ff4400" : "#44aaff"}
             depthTest={false}
+            depthWrite={false}
           />
         </mesh>
       ))}
