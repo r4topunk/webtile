@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import {
   Tooltip,
   TooltipContent,
@@ -8,8 +9,54 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { useEditorStore } from "@/store/editor-store"
 import type { EditMode, EditorTool, PlacementPlane } from "@/lib/types"
+import {
+  MousePointer2,
+  LayoutGrid,
+  Paintbrush,
+  Box,
+  Square,
+  CircleDot,
+  Minus,
+  Pencil,
+  MousePointer,
+} from "lucide-react"
 
 function ToolButton({
+  active,
+  onClick,
+  icon,
+  shortcut,
+  description,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: ReactNode
+  shortcut: string
+  description: string
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
+            active
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          }`}
+        >
+          {icon}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        <div className="text-xs font-medium">{description}</div>
+        <div className="text-[10px] text-muted-foreground">{shortcut}</div>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function PlaneButton({
   active,
   onClick,
   label,
@@ -27,7 +74,7 @@ function ToolButton({
       <TooltipTrigger asChild>
         <button
           onClick={onClick}
-          className={`flex h-8 w-full items-center justify-center rounded text-[11px] font-medium transition-colors ${
+          className={`flex h-6 w-8 items-center justify-center rounded text-[10px] font-bold tracking-tight transition-colors ${
             active
               ? "bg-accent text-accent-foreground"
               : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
@@ -38,29 +85,60 @@ function ToolButton({
       </TooltipTrigger>
       <TooltipContent side="right" sideOffset={8}>
         <div className="text-xs font-medium">{description}</div>
-        <div className="text-[10px] text-muted-foreground">Shortcut: {shortcut}</div>
+        <div className="text-[10px] text-muted-foreground">{shortcut}</div>
       </TooltipContent>
     </Tooltip>
   )
 }
 
-const tools: { value: EditorTool; label: string; shortcut: string; description: string }[] = [
-  { value: "select", label: "Sel", shortcut: "V", description: "Select and transform objects" },
-  { value: "place", label: "Tile", shortcut: "B", description: "Place tiles on the grid" },
-  { value: "paint", label: "Paint", shortcut: "P", description: "Paint tiles onto existing faces" },
+const ICON_SIZE = 16
+
+const tools: {
+  value: EditorTool
+  icon: ReactNode
+  shortcut: string
+  description: string
+}[] = [
+  {
+    value: "select",
+    icon: <MousePointer2 size={ICON_SIZE} />,
+    shortcut: "V",
+    description: "Select & transform objects",
+  },
+  {
+    value: "place",
+    icon: <LayoutGrid size={ICON_SIZE} />,
+    shortcut: "B",
+    description: "Place tiles on the grid",
+  },
+  {
+    value: "paint",
+    icon: <Paintbrush size={ICON_SIZE} />,
+    shortcut: "P",
+    description: "Paint tiles onto faces",
+  },
 ]
 
-const modes: { value: EditMode; label: string; description: string }[] = [
-  { value: "object", label: "Obj", description: "Select and transform whole objects" },
-  { value: "face", label: "Face", description: "Select and edit individual faces. E to extrude" },
-  { value: "vertex", label: "Vert", description: "Select and drag individual vertices" },
-  { value: "edge", label: "Edge", description: "Select and drag edges" },
+const modes: {
+  value: EditMode
+  icon: ReactNode
+  description: string
+}[] = [
+  { value: "object", icon: <Box size={ICON_SIZE} />, description: "Object mode" },
+  { value: "face", icon: <Square size={ICON_SIZE} />, description: "Face mode — E to extrude" },
+  { value: "vertex", icon: <CircleDot size={ICON_SIZE} />, description: "Vertex mode" },
+  { value: "edge", icon: <Minus size={ICON_SIZE} />, description: "Edge mode" },
 ]
 
-const planes: { value: PlacementPlane; label: string; shortcut: string; description: string }[] = [
-  { value: "xz", label: "XZ", shortcut: "1", description: "Place tiles on the floor plane (Y = offset)" },
-  { value: "xy", label: "XY", shortcut: "2", description: "Place tiles on the front wall (Z = offset)" },
-  { value: "yz", label: "YZ", shortcut: "3", description: "Place tiles on the side wall (X = offset)" },
+const planes: {
+  value: PlacementPlane
+  label: string
+  shortcut: string
+  description: string
+}[] = [
+  { value: "xz", label: "XZ", shortcut: "1", description: "Floor plane (Y = offset)" },
+  { value: "xy", label: "XY", shortcut: "2", description: "Front wall (Z = offset)" },
+  { value: "yz", label: "YZ", shortcut: "3", description: "Side wall (X = offset)" },
 ]
 
 export function LeftToolbar() {
@@ -72,101 +150,87 @@ export function LeftToolbar() {
   const setPlacementPlane = useEditorStore((s) => s.setPlacementPlane)
   const placementOffset = useEditorStore((s) => s.placementOffset)
 
+  const isDrawMode = tool === "place" || tool === "paint"
+
   return (
-    <div className="flex w-12 flex-col gap-1 border-r bg-background px-1 py-2">
-      {/* Mode toggle — Draw vs Edit, like Crocotile's Tab toggle */}
+    <div className="flex w-10 flex-col items-center gap-0.5 border-r bg-background py-2">
+      {/* Draw / Edit mode toggle */}
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            onClick={() =>
-              setTool(tool === "select" ? "place" : "select")
-            }
-            className={`flex h-7 w-full items-center justify-center rounded text-[10px] font-bold transition-colors ${
-              tool === "select"
-                ? "bg-blue-600 text-white"
-                : "bg-orange-600 text-white"
+            onClick={() => setTool(isDrawMode ? "select" : "place")}
+            className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
+              isDrawMode
+                ? "bg-orange-600/90 text-white hover:bg-orange-500"
+                : "bg-blue-600/90 text-white hover:bg-blue-500"
             }`}
           >
-            {tool === "select" ? "EDIT" : "DRAW"}
+            {isDrawMode ? <Pencil size={ICON_SIZE} /> : <MousePointer size={ICON_SIZE} />}
           </button>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={8}>
           <div className="text-xs font-medium">
-            {tool === "select" ? "Edit Mode — selecting and transforming" : "Draw Mode — placing and painting"}
+            {isDrawMode ? "Draw Mode" : "Edit Mode"}
           </div>
-          <div className="text-[10px] text-muted-foreground">Click to toggle between Draw and Edit</div>
+          <div className="text-[10px] text-muted-foreground">Click to switch</div>
         </TooltipContent>
       </Tooltip>
 
-      <Separator className="my-1" />
+      <Separator className="my-1.5 w-6" />
 
       {/* Tools */}
-      <div className="space-y-0.5">
-        <div className="px-0.5 text-[8px] font-medium uppercase tracking-wider text-muted-foreground">
-          Tools
-        </div>
-        {tools.map((t) => (
-          <ToolButton
-            key={t.value}
-            active={tool === t.value}
-            onClick={() => setTool(t.value)}
-            label={t.label}
-            shortcut={t.shortcut}
-            description={t.description}
-          />
-        ))}
-      </div>
+      {tools.map((t) => (
+        <ToolButton
+          key={t.value}
+          active={tool === t.value}
+          onClick={() => setTool(t.value)}
+          icon={t.icon}
+          shortcut={t.shortcut}
+          description={t.description}
+        />
+      ))}
 
-      <Separator className="my-1" />
+      <Separator className="my-1.5 w-6" />
 
       {/* Edit modes */}
-      <div className="space-y-0.5">
-        <div className="px-0.5 text-[8px] font-medium uppercase tracking-wider text-muted-foreground">
-          Mode
-        </div>
-        {modes.map((m) => (
-          <ToolButton
-            key={m.value}
-            active={mode === m.value}
-            onClick={() => setMode(m.value)}
-            label={m.label}
-            shortcut="Tab"
-            description={m.description}
-          />
-        ))}
-      </div>
+      {modes.map((m) => (
+        <ToolButton
+          key={m.value}
+          active={mode === m.value}
+          onClick={() => setMode(m.value)}
+          icon={m.icon}
+          shortcut="Tab"
+          description={m.description}
+        />
+      ))}
 
-      <Separator className="my-1" />
+      <Separator className="my-1.5 w-6" />
 
       {/* Placement plane */}
-      <div className="space-y-0.5">
-        <div className="px-0.5 text-[8px] font-medium uppercase tracking-wider text-muted-foreground">
-          Plane
-        </div>
-        {planes.map((p) => (
-          <ToolButton
-            key={p.value}
-            active={placementPlane === p.value}
-            onClick={() => setPlacementPlane(p.value)}
-            label={p.label}
-            shortcut={p.shortcut}
-            description={p.description}
-          />
-        ))}
+      {planes.map((p) => (
+        <PlaneButton
+          key={p.value}
+          active={placementPlane === p.value}
+          onClick={() => setPlacementPlane(p.value)}
+          label={p.label}
+          shortcut={p.shortcut}
+          description={p.description}
+        />
+      ))}
 
-        {/* Offset display */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="flex h-6 w-full items-center justify-center rounded bg-muted text-[10px] font-mono text-muted-foreground">
-              {placementOffset >= 0 ? "+" : ""}{placementOffset}
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={8}>
-            <div className="text-xs font-medium">Plane offset: {placementOffset}</div>
-            <div className="text-[10px] text-muted-foreground">Shift+Scroll to adjust</div>
-          </TooltipContent>
-        </Tooltip>
-      </div>
+      {/* Offset display */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="mt-0.5 flex h-5 w-8 items-center justify-center rounded bg-muted text-[9px] font-mono text-muted-foreground">
+            {placementOffset >= 0 ? "+" : ""}
+            {placementOffset}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={8}>
+          <div className="text-xs font-medium">Plane offset: {placementOffset}</div>
+          <div className="text-[10px] text-muted-foreground">Shift + Scroll to adjust</div>
+        </TooltipContent>
+      </Tooltip>
 
       <div className="flex-1" />
     </div>

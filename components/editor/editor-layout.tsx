@@ -14,10 +14,12 @@ import { AutosaveRestoreDialog } from "@/components/dialogs/autosave-restore-dia
 import { Timeline } from "@/components/animation/timeline"
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
 import { useAutoSave } from "@/hooks/use-auto-save"
+import { useEditorStore } from "@/store/editor-store"
 
 export default function EditorLayout() {
   useKeyboardShortcuts()
   useAutoSave()
+  const showTimeline = useEditorStore((s) => s.showTimeline)
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -80,8 +82,8 @@ export default function EditorLayout() {
           </div>
         </div>
 
-        {/* Timeline */}
-        <Timeline />
+        {/* Timeline — toggle via View menu */}
+        {showTimeline && <Timeline />}
 
         {/* Status bar */}
         <StatusBar />

@@ -24,6 +24,8 @@ export function EditorMenuBar() {
   const showGrid = useEditorStore((s) => s.showGrid)
   const toggleGrid = useEditorStore((s) => s.toggleGrid)
   const setCameraPreset = useEditorStore((s) => s.setCameraPreset)
+  const showTimeline = useEditorStore((s) => s.showTimeline)
+  const toggleTimeline = useEditorStore((s) => s.toggleTimeline)
 
   const exportOpen = useEditorStore((s) => s.exportDialogOpen)
   const setExportOpen = useEditorStore((s) => s.setExportDialogOpen)
@@ -96,6 +98,9 @@ export function EditorMenuBar() {
               <MenubarItem onClick={toggleGrid}>
                 {showGrid ? "Hide Grid" : "Show Grid"}
                 <MenubarShortcut>G</MenubarShortcut>
+              </MenubarItem>
+              <MenubarItem onClick={toggleTimeline}>
+                {showTimeline ? "Hide Timeline" : "Show Timeline"}
               </MenubarItem>
               <MenubarSeparator />
               <MenubarSub>
