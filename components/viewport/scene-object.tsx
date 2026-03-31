@@ -54,14 +54,14 @@ function FaceHighlightOverlay({ obj }: { obj: SceneObject }) {
 function VertexDots({ obj }: { obj: SceneObject }) {
   const selectedVertexIndices = useSceneStore((s) => s.selectedVertexIndices)
   const selectedSet = useMemo(() => new Set(selectedVertexIndices), [selectedVertexIndices])
-  const { camera, raycaster, pointer } = useThree()
+  const { camera, gl, pointer } = useThree()
 
   const draggingRef = useRef(false)
-  const dragOriginRef = useRef(new THREE.Vector3())  // world pos at drag start
+  const dragOriginRef = useRef(new THREE.Vector3())
   const dragPlaneRef = useRef(new THREE.Plane())
-  const accumulatedRef = useRef(new THREE.Vector3()) // raw accumulated delta
-  const appliedRef = useRef(new THREE.Vector3())     // what we've actually applied
+  const appliedRef = useRef(new THREE.Vector3())
   const axisLockRef = useRef<"x" | "y" | "z" | null>(null)
+  const keyStateRef = useRef({ shift: false, ctrl: false })
 
   // Flatten all vertices with their global index
   const vertices = useMemo(() => {
@@ -75,6 +75,17 @@ function VertexDots({ obj }: { obj: SceneObject }) {
     }
     return result
   }, [obj.faces])
+
+  /**
+   * Raycast pointer against a plane using a fresh raycaster.
+   * Uses R3F's pointer (always current inside useFrame).
+   */
+  function raycastDragPlane(): THREE.Vector3 | null {
+    const rc = new THREE.Raycaster()
+    rc.setFromCamera(pointer, camera)
+    const hit = new THREE.Vector3()
+    return rc.ray.intersectPlane(dragPlaneRef.current, hit) ? hit : null
+  }
 
   const handlePointerDown = useCallback(
     (e: ThreeEvent<PointerEvent>, index: number) => {
@@ -91,60 +102,35 @@ function VertexDots({ obj }: { obj: SceneObject }) {
         store.setSelectedVertices([index])
       }
 
-      // Start drag
-      const vertex = vertices.find((v) => v.index === index)
-      if (!vertex) return
+      // Use the R3F intersection point directly — this is the exact world
+      // position where the ray hit the vertex sphere. Much more reliable
+      // than computing it from vertex local coords + obj.position.
+      const worldPoint = e.point.clone()
 
       const cameraDir = new THREE.Vector3()
       camera.getWorldDirection(cameraDir)
-      const point = new THREE.Vector3(...vertex.pos)
-        .add(new THREE.Vector3(...obj.position))
-      dragPlaneRef.current.setFromNormalAndCoplanarPoint(cameraDir, point)
-      dragOriginRef.current.copy(point)
-      accumulatedRef.current.set(0, 0, 0)
+      dragPlaneRef.current.setFromNormalAndCoplanarPoint(cameraDir, worldPoint)
+      dragOriginRef.current.copy(worldPoint)
       appliedRef.current.set(0, 0, 0)
       axisLockRef.current = null
       draggingRef.current = true
 
       ;(e.nativeEvent.target as HTMLElement).setPointerCapture(e.nativeEvent.pointerId)
     },
-    [camera, obj.position, vertices, selectedSet],
+    [camera, selectedSet],
   )
 
-  /**
-   * Drag logic with snapping:
-   *
-   * - Grid snap (Ctrl held or snapEnabled): positions snap to snapSize grid
-   *   We accumulate raw delta, then compute snapped delta = round(accumulated/snap)*snap,
-   *   and apply only the difference from what we've already applied.
-   *
-   * - Axis lock (Shift held during drag): constrains to dominant movement axis.
-   *   Detected after 0.1 units of movement, then locks for rest of drag.
-   */
+  // Drag every frame
   useFrame(() => {
     if (!draggingRef.current) return
 
-    raycaster.setFromCamera(pointer, camera)
-    const intersection = new THREE.Vector3()
-    const hit = raycaster.ray.intersectPlane(dragPlaneRef.current, intersection)
-    if (!hit) return
+    const intersection = raycastDragPlane()
+    if (!intersection) return
 
     // Raw delta from drag origin
     const rawDelta = intersection.clone().sub(dragOriginRef.current)
 
-    // Check if Shift is held → axis lock
-    const shiftHeld = window.event instanceof KeyboardEvent
-      ? (window.event as KeyboardEvent).shiftKey
-      : false
-    // We poll shift state via a separate check
-    const keys = { shift: false, ctrl: false }
-    // Use a simple polling approach
-    const pollKeys = () => {
-      // We stored keyboard state via listeners below
-      keys.shift = keyStateRef.current.shift
-      keys.ctrl = keyStateRef.current.ctrl
-    }
-    pollKeys()
+    const keys = keyStateRef.current
 
     // Axis lock: detect dominant axis after threshold
     if (keys.shift && !axisLockRef.current) {
@@ -158,7 +144,6 @@ function VertexDots({ obj }: { obj: SceneObject }) {
         else axisLockRef.current = "z"
       }
     }
-    // Clear axis lock if shift released
     if (!keys.shift) axisLockRef.current = null
 
     // Apply axis constraint
@@ -186,7 +171,7 @@ function VertexDots({ obj }: { obj: SceneObject }) {
       snapped = constrained
     }
 
-    // Compute incremental delta (what to apply this frame)
+    // Incremental delta
     const incrementalDelta: Vec3 = [
       snapped.x - appliedRef.current.x,
       snapped.y - appliedRef.current.y,
@@ -210,25 +195,20 @@ function VertexDots({ obj }: { obj: SceneObject }) {
     axisLockRef.current = null
   }, [])
 
-  // Track keyboard state for shift/ctrl during drag
-  const keyStateRef = useRef({ shift: false, ctrl: false })
+  // Track keyboard state + global pointer up
   useEffect(() => {
-    const down = (e: KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => {
       keyStateRef.current.shift = e.shiftKey
       keyStateRef.current.ctrl = e.ctrlKey || e.metaKey
     }
-    const up = (e: KeyboardEvent) => {
-      keyStateRef.current.shift = e.shiftKey
-      keyStateRef.current.ctrl = e.ctrlKey || e.metaKey
-    }
-    const pointerUp = () => { draggingRef.current = false }
-    window.addEventListener("keydown", down)
-    window.addEventListener("keyup", up)
-    window.addEventListener("pointerup", pointerUp)
+    const onPointerUp = () => { draggingRef.current = false }
+    window.addEventListener("keydown", onKey)
+    window.addEventListener("keyup", onKey)
+    window.addEventListener("pointerup", onPointerUp)
     return () => {
-      window.removeEventListener("keydown", down)
-      window.removeEventListener("keyup", up)
-      window.removeEventListener("pointerup", pointerUp)
+      window.removeEventListener("keydown", onKey)
+      window.removeEventListener("keyup", onKey)
+      window.removeEventListener("pointerup", onPointerUp)
     }
   }, [])
 
