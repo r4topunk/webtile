@@ -22,7 +22,7 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn("antialiased", fontSans.variable, "font-mono", geistMono.variable)}
     >
-      <body>
+      <body className="overflow-hidden">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
