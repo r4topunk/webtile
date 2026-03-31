@@ -21,14 +21,16 @@ export function buildGeometryFromFaces(faces: SceneFace[]): THREE.BufferGeometry
       uvs.push(...face.uvs[v])
     }
 
-    // 2 triangles: 0-1-2 and 0-2-3
+    // 2 triangles (CCW winding): 0-1-2 and 0-3-2 reversed to keep both CCW
+    // Quad vertices: v0(BL), v1(TL), v2(TR), v3(BR)
+    // Tri 1: v0-v1-v2 (CCW) | Tri 2: v0-v2-v3 → must be v2-v3-v0 for CCW
     indices.push(
       baseIndex,
       baseIndex + 1,
       baseIndex + 2,
-      baseIndex,
       baseIndex + 2,
       baseIndex + 3,
+      baseIndex,
     )
   }
 
@@ -137,19 +139,19 @@ export function computeTileUVs(
 }
 
 /**
- * Compute the normal vector of a quad face from its first 3 vertices.
- * Uses cross product of edge01 x edge03 (CCW winding).
+ * Compute the outward normal vector of a quad face.
+ * Vertices are CCW: v0(BL) v1(TL) v2(TR) v3(BR).
+ * Normal = (v1 - v0) × (v3 - v0) points INWARD for our winding,
+ * so we use (v3 - v0) × (v1 - v0) to get the outward normal.
  */
 export function computeFaceNormal(face: SceneFace): Vec3 {
   const [v0, v1, , v3] = face.vertices
-  // edge01 = v1 - v0
   const e01: Vec3 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]]
-  // edge03 = v3 - v0
   const e03: Vec3 = [v3[0] - v0[0], v3[1] - v0[1], v3[2] - v0[2]]
-  // cross = e01 x e03
-  const nx = e01[1] * e03[2] - e01[2] * e03[1]
-  const ny = e01[2] * e03[0] - e01[0] * e03[2]
-  const nz = e01[0] * e03[1] - e01[1] * e03[0]
+  // cross = e03 x e01 (reversed for outward normal)
+  const nx = e03[1] * e01[2] - e03[2] * e01[1]
+  const ny = e03[2] * e01[0] - e03[0] * e01[2]
+  const nz = e03[0] * e01[1] - e03[1] * e01[0]
   const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
   if (len === 0) return [0, 1, 0]
   return [nx / len, ny / len, nz / len]

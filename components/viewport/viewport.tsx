@@ -169,7 +169,7 @@ export function Viewport() {
           makeDefault
           enableDamping={false}
           enableRotate
-          enablePan={false}
+          enablePan
           enableZoom={false}
           mouseButtons={{
             LEFT: undefined as unknown as THREE.MOUSE,
