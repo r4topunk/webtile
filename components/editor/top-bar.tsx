@@ -280,8 +280,55 @@ export function TopBar() {
         </Tooltip>
       </div>
 
+      <Separator orientation="vertical" className="mx-1 h-5" />
+
+      {/* Camera presets */}
+      <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => useEditorStore.getState().setCameraPreset("front")}
+            >
+              Front
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Front view (Numpad 1)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => useEditorStore.getState().setCameraPreset("right")}
+            >
+              Right
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Right view (Numpad 3)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => useEditorStore.getState().setCameraPreset("top")}
+            >
+              Top
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Top view (Numpad 7)</TooltipContent>
+        </Tooltip>
+      </div>
+
       <div className="flex-1" />
-      <span className="text-xs text-muted-foreground">Phase 4</span>
+      <span className="text-xs text-muted-foreground">Phase 7</span>
 
       <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
       <ImportDialog open={importOpen} onOpenChange={setImportOpen} />

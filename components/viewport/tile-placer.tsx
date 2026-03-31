@@ -79,18 +79,6 @@ function ghostRotation(
   }
 }
 
-/**
- * PlaneGeometry vertex order (1x1, 1 segment):
- *   v0 (TL) --- v1 (TR)
- *       |           |
- *   v2 (BL) --- v3 (BR)
- */
-function makeGhostGeometry(uvs: Float32Array): THREE.PlaneGeometry {
-  const geo = new THREE.PlaneGeometry(1, 1)
-  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2))
-  return geo
-}
-
 /** Build the invisible raycast target mesh props for the current plane */
 function raycastMeshProps(plane: PlacementPlane, offset: number) {
   switch (plane) {
@@ -154,16 +142,28 @@ export function TilePlacer() {
     const tileset = tilesets[selectedTile.tilesetId]
     if (!tileset) return
 
-    const face = createTileFace(
-      pos[0],
-      pos[1],
-      selectedTile,
-      tileset.columns,
-      tileset.rows,
-      placementPlane,
-      placementOffset,
-    )
-    placeNewTile(face)
+    // Multi-tile region: place one SceneFace per tile in the region
+    for (let dy = 0; dy < selectedTile.h; dy++) {
+      for (let dx = 0; dx < selectedTile.w; dx++) {
+        const singleTileRef = {
+          tilesetId: selectedTile.tilesetId,
+          x: selectedTile.x + dx,
+          y: selectedTile.y + dy,
+          w: 1,
+          h: 1,
+        }
+        const face = createTileFace(
+          pos[0] + dx,
+          pos[1] + dy,
+          singleTileRef,
+          tileset.columns,
+          tileset.rows,
+          placementPlane,
+          placementOffset,
+        )
+        placeNewTile(face)
+      }
+    }
   }
 
   // Ghost preview texture
@@ -175,6 +175,7 @@ export function TilePlacer() {
   }, [selectedTile, tilesets])
 
   // Ghost geometry with UVs matching PlaneGeometry vertex order: TL, TR, BL, BR
+  // Sized to cover the full multi-tile region
   const ghostGeometry = useMemo(() => {
     if (!selectedTile) return null
     const tileset = tilesets[selectedTile.tilesetId]
@@ -185,15 +186,21 @@ export function TilePlacer() {
     const v0 = 1 - (selectedTile.y + selectedTile.h) / rows
     const v1 = 1 - selectedTile.y / rows
 
+    const geo = new THREE.PlaneGeometry(selectedTile.w, selectedTile.h)
     // PlaneGeometry vertices: TL(0), TR(1), BL(2), BR(3)
-    return makeGhostGeometry(
-      new Float32Array([
-        u0, v1, // TL
-        u1, v1, // TR
-        u0, v0, // BL
-        u1, v0, // BR
-      ]),
+    geo.setAttribute(
+      "uv",
+      new THREE.Float32BufferAttribute(
+        new Float32Array([
+          u0, v1, // TL
+          u1, v1, // TR
+          u0, v0, // BL
+          u1, v0, // BR
+        ]),
+        2,
+      ),
     )
+    return geo
   }, [selectedTile, tilesets])
 
   // Dispose old ghost geometry
@@ -219,11 +226,16 @@ export function TilePlacer() {
       </mesh>
 
       {/* Ghost preview */}
-      {ghostPos && ghostTexture && ghostGeometry && (
+      {ghostPos && ghostTexture && ghostGeometry && selectedTile && (
         <mesh
           ref={meshRef}
           geometry={ghostGeometry}
-          position={ghostPosition(ghostPos[0], ghostPos[1], placementPlane, placementOffset)}
+          position={ghostPosition(
+            ghostPos[0] + (selectedTile.w - 1) / 2,
+            ghostPos[1] + (selectedTile.h - 1) / 2,
+            placementPlane,
+            placementOffset,
+          )}
           rotation={ghostRotation(placementPlane)}
         >
           <meshBasicMaterial

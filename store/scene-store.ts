@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { immer } from "zustand/middleware/immer"
 import { temporal } from "zundo"
-import type { SceneFace, SceneObject, TileRef, Vec3 } from "@/lib/types"
+import type { SceneFace, SceneObject, TileRef, Vec2, Vec3 } from "@/lib/types"
 import { extrudeFace, computeTileUVs } from "@/lib/geometry"
 
 interface SceneState {
@@ -53,6 +53,9 @@ interface SceneState {
 
   // Paint mode
   paintFace: (objectId: string, faceId: string, tileRef: TileRef, tilesetColumns: number, tilesetRows: number) => void
+
+  // UV editing
+  updateFaceUVs: (objectId: string, faceId: string, uvs: [Vec2, Vec2, Vec2, Vec2]) => void
 
   /** Create a new object with a single face and return its id */
   placeNewTile: (face: SceneFace) => string
@@ -334,6 +337,15 @@ export const useSceneStore = create<SceneState>()(
           if (!face) return
           face.tileRef = tileRef
           face.uvs = computeTileUVs(tileRef, tilesetColumns, tilesetRows)
+        }),
+
+      updateFaceUVs: (objectId, faceId, uvs) =>
+        set((state) => {
+          const obj = state.objects[objectId]
+          if (!obj) return
+          const face = obj.faces.find((f) => f.id === faceId)
+          if (!face) return
+          face.uvs = uvs
         }),
 
       placeNewTile: (face) => {

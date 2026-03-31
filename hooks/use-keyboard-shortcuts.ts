@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { useEditorStore } from "@/store/editor-store"
 import { useSceneStore } from "@/store/scene-store"
+import { useAnimationStore } from "@/store/animation-store"
 import { saveProjectToFile, loadProjectFromFile } from "@/lib/file-io"
 
 export function useKeyboardShortcuts() {
@@ -62,6 +63,7 @@ export function useKeyboardShortcuts() {
 
       const editorState = useEditorStore.getState()
       const sceneState = useSceneStore.getState()
+      const animState = useAnimationStore.getState()
 
       switch (e.key) {
         case "v":
@@ -120,6 +122,26 @@ export function useKeyboardShortcuts() {
         case "G":
           editorState.toggleGrid()
           break
+        // Camera presets (numpad)
+        case "End": // Numpad 1
+          editorState.setCameraPreset("front")
+          break
+        case "Home": // Numpad 7
+          editorState.setCameraPreset("top")
+          break
+        case "PageDown": // Numpad 3
+          editorState.setCameraPreset("right")
+          break
+        // Space — toggle animation playback
+        case " ": {
+          e.preventDefault()
+          if (animState.isPlaying) {
+            animState.pause()
+          } else {
+            animState.play()
+          }
+          break
+        }
         case "Delete":
         case "Backspace": {
           // In face mode, delete selected faces instead of objects

@@ -1,6 +1,7 @@
 import type { SceneObject, Tileset } from "@/lib/types"
 import { useSceneStore } from "@/store/scene-store"
 import { useTilesetStore } from "@/store/tileset-store"
+import { useAnimationStore, type Keyframe } from "@/store/animation-store"
 import { createImageUrl, getTilesetDimensions } from "@/lib/texture-utils"
 
 export interface WebtileProject {
@@ -16,6 +17,11 @@ export interface WebtileProject {
       imageData: string
     }
   >
+  animation?: {
+    keyframes: Keyframe[]
+    totalFrames: number
+    fps: number
+  }
 }
 
 /**
@@ -71,10 +77,19 @@ export async function serializeProject(): Promise<WebtileProject> {
     }
   }
 
+  // Serialize animation data
+  const animState = useAnimationStore.getState()
+  const animation = {
+    keyframes: JSON.parse(JSON.stringify(animState.keyframes)) as Keyframe[],
+    totalFrames: animState.totalFrames,
+    fps: animState.fps,
+  }
+
   return {
     version: 1,
     scene: { objects, objectOrder },
     tilesets,
+    animation,
   }
 }
 
@@ -115,6 +130,17 @@ export async function deserializeProject(
   const objectOrder = project.scene.objectOrder ?? Object.keys(objects)
 
   useSceneStore.getState().loadObjects(objects, objectOrder)
+
+  // Restore animation data
+  if (project.animation) {
+    useAnimationStore.getState().loadKeyframes(
+      project.animation.keyframes,
+      project.animation.totalFrames,
+      project.animation.fps
+    )
+  } else {
+    useAnimationStore.getState().clearAll()
+  }
 }
 
 /**

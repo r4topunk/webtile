@@ -8,7 +8,9 @@ import { Viewport } from "@/components/viewport/viewport"
 import { TilesetPanel } from "@/components/tileset/tileset-panel"
 import { LayersPanel } from "@/components/panels/layers-panel"
 import { PropertiesPanel } from "@/components/panels/properties-panel"
+import { UVEditor } from "@/components/panels/uv-editor"
 import { AutosaveRestoreDialog } from "@/components/dialogs/autosave-restore-dialog"
+import { Timeline } from "@/components/animation/timeline"
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
 import { useAutoSave } from "@/hooks/use-auto-save"
 import { Separator } from "@/components/ui/separator"
@@ -19,7 +21,7 @@ export default function EditorLayout() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="grid h-screen w-screen grid-rows-[auto_1fr_auto] overflow-hidden">
+      <div className="grid h-screen w-screen grid-rows-[auto_1fr_auto_auto] overflow-hidden">
         <TopBar />
         <div className="grid min-h-0 grid-cols-[1fr_280px]">
           <div className="min-w-0 overflow-hidden">
@@ -31,6 +33,7 @@ export default function EditorLayout() {
                 <TabsTrigger value="tileset">Tileset</TabsTrigger>
                 <TabsTrigger value="layers">Layers</TabsTrigger>
                 <TabsTrigger value="properties">Properties</TabsTrigger>
+                <TabsTrigger value="uv">UV</TabsTrigger>
               </TabsList>
               <TabsContent
                 value="tileset"
@@ -50,9 +53,16 @@ export default function EditorLayout() {
               >
                 <PropertiesPanel />
               </TabsContent>
+              <TabsContent
+                value="uv"
+                className="min-h-0 flex-1 overflow-auto"
+              >
+                <UVEditor />
+              </TabsContent>
             </Tabs>
           </div>
         </div>
+        <Timeline />
         <StatusBar />
       </div>
       <AutosaveRestoreDialog />

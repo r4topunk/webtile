@@ -1,6 +1,8 @@
 import { create } from "zustand"
 import type { CameraType, EditMode, EditorTool, PlacementPlane } from "@/lib/types"
 
+export type CameraPreset = "front" | "top" | "right" | null
+
 interface EditorState {
   tool: EditorTool
   mode: EditMode
@@ -11,6 +13,9 @@ interface EditorState {
   placementOffset: number
   exportDialogOpen: boolean
   importDialogOpen: boolean
+  snapEnabled: boolean
+  snapSize: number
+  cameraPreset: CameraPreset
 
   setTool: (tool: EditorTool) => void
   setMode: (mode: EditMode) => void
@@ -24,6 +29,10 @@ interface EditorState {
   decrementPlacementOffset: () => void
   setExportDialogOpen: (open: boolean) => void
   setImportDialogOpen: (open: boolean) => void
+  setSnapEnabled: (enabled: boolean) => void
+  toggleSnap: () => void
+  setSnapSize: (size: number) => void
+  setCameraPreset: (preset: CameraPreset) => void
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -36,6 +45,9 @@ export const useEditorStore = create<EditorState>((set) => ({
   placementOffset: 0,
   exportDialogOpen: false,
   importDialogOpen: false,
+  snapEnabled: true,
+  snapSize: 1,
+  cameraPreset: null,
 
   setTool: (tool) => set({ tool }),
   setMode: (mode) => set({ mode }),
@@ -52,4 +64,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   decrementPlacementOffset: () => set((s) => ({ placementOffset: s.placementOffset - 1 })),
   setExportDialogOpen: (exportDialogOpen) => set({ exportDialogOpen }),
   setImportDialogOpen: (importDialogOpen) => set({ importDialogOpen }),
+  setSnapEnabled: (snapEnabled) => set({ snapEnabled }),
+  toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+  setSnapSize: (snapSize) => set({ snapSize: Math.max(0.1, snapSize) }),
+  setCameraPreset: (cameraPreset) => set({ cameraPreset }),
 }))
