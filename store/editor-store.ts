@@ -9,6 +9,8 @@ interface EditorState {
   showGrid: boolean
   placementPlane: PlacementPlane
   placementOffset: number
+  exportDialogOpen: boolean
+  importDialogOpen: boolean
 
   setTool: (tool: EditorTool) => void
   setMode: (mode: EditMode) => void
@@ -20,6 +22,8 @@ interface EditorState {
   setPlacementOffset: (offset: number) => void
   incrementPlacementOffset: () => void
   decrementPlacementOffset: () => void
+  setExportDialogOpen: (open: boolean) => void
+  setImportDialogOpen: (open: boolean) => void
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -30,6 +34,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   showGrid: true,
   placementPlane: "xz",
   placementOffset: 0,
+  exportDialogOpen: false,
+  importDialogOpen: false,
 
   setTool: (tool) => set({ tool }),
   setMode: (mode) => set({ mode }),
@@ -44,4 +50,6 @@ export const useEditorStore = create<EditorState>((set) => ({
   setPlacementOffset: (placementOffset) => set({ placementOffset }),
   incrementPlacementOffset: () => set((s) => ({ placementOffset: s.placementOffset + 1 })),
   decrementPlacementOffset: () => set((s) => ({ placementOffset: s.placementOffset - 1 })),
+  setExportDialogOpen: (exportDialogOpen) => set({ exportDialogOpen }),
+  setImportDialogOpen: (importDialogOpen) => set({ importDialogOpen }),
 }))

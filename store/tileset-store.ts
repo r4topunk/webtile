@@ -12,6 +12,8 @@ interface TilesetState {
   removeTileset: (id: string) => void
   setActiveTileset: (id: string) => void
   setSelectedTile: (tile: TileRef | null) => void
+  clearAll: () => void
+  loadTilesets: (tilesets: Record<string, Tileset>) => void
 }
 
 export const useTilesetStore = create<TilesetState>()(
@@ -46,5 +48,24 @@ export const useTilesetStore = create<TilesetState>()(
 
     setActiveTileset: (id) => set({ activeTilesetId: id }),
     setSelectedTile: (tile) => set({ selectedTile: tile }),
+
+    clearAll: () =>
+      set((state) => {
+        // Dispose all textures
+        for (const tileset of Object.values(state.tilesets)) {
+          disposeTilesetTexture(tileset.imageUrl)
+        }
+        state.tilesets = {}
+        state.activeTilesetId = null
+        state.selectedTile = null
+      }),
+
+    loadTilesets: (tilesets) =>
+      set((state) => {
+        state.tilesets = tilesets as Record<string, Tileset>
+        const ids = Object.keys(tilesets)
+        state.activeTilesetId = ids[0] ?? null
+        state.selectedTile = null
+      }),
   })),
 )

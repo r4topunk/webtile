@@ -9,7 +9,17 @@ import {
 } from "@/components/ui/tooltip"
 import { useEditorStore } from "@/store/editor-store"
 import { useSceneStore } from "@/store/scene-store"
-import type { PlacementPlane } from "@/lib/types"
+import { ExportDialog } from "@/components/dialogs/export-dialog"
+import { ImportDialog } from "@/components/dialogs/import-dialog"
+import { saveProjectToFile, loadProjectFromFile } from "@/lib/file-io"
+import type { EditMode, EditorTool, PlacementPlane } from "@/lib/types"
+
+const modes: { value: EditMode; label: string }[] = [
+  { value: "object", label: "Object" },
+  { value: "face", label: "Face" },
+  { value: "vertex", label: "Vertex" },
+  { value: "edge", label: "Edge" },
+]
 
 const planes: { value: PlacementPlane; label: string; key: string }[] = [
   { value: "xz", label: "XZ", key: "1" },
@@ -24,8 +34,15 @@ export function TopBar() {
   const toggleGrid = useEditorStore((s) => s.toggleGrid)
   const tool = useEditorStore((s) => s.tool)
   const setTool = useEditorStore((s) => s.setTool)
+  const mode = useEditorStore((s) => s.mode)
+  const setMode = useEditorStore((s) => s.setMode)
   const placementPlane = useEditorStore((s) => s.placementPlane)
   const setPlacementPlane = useEditorStore((s) => s.setPlacementPlane)
+
+  const exportOpen = useEditorStore((s) => s.exportDialogOpen)
+  const setExportOpen = useEditorStore((s) => s.setExportDialogOpen)
+  const importOpen = useEditorStore((s) => s.importDialogOpen)
+  const setImportOpen = useEditorStore((s) => s.setImportDialogOpen)
 
   function handleUndo() {
     useSceneStore.temporal.getState().undo()
@@ -69,6 +86,43 @@ export function TopBar() {
           </TooltipTrigger>
           <TooltipContent>Place tiles (B)</TooltipContent>
         </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={tool === "paint" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setTool("paint")}
+            >
+              Paint
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Paint faces (P)</TooltipContent>
+        </Tooltip>
+      </div>
+
+      <Separator orientation="vertical" className="mx-1 h-5" />
+
+      {/* Edit modes */}
+      <div className="flex items-center gap-1">
+        {modes.map((m) => (
+          <Tooltip key={m.value}>
+            <TooltipTrigger asChild>
+              <Button
+                variant={mode === m.value ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setMode(m.value)}
+              >
+                {m.label}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {m.label} mode (Tab to cycle)
+            </TooltipContent>
+          </Tooltip>
+        ))}
       </div>
 
       <Separator orientation="vertical" className="mx-1 h-5" />
@@ -160,8 +214,77 @@ export function TopBar() {
         </Tooltip>
       </div>
 
+      <Separator orientation="vertical" className="mx-1 h-5" />
+
+      {/* Import / Export */}
+      <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setImportOpen(true)}
+            >
+              Import
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Import OBJ</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setExportOpen(true)}
+            >
+              Export
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Export scene (Ctrl+E)</TooltipContent>
+        </Tooltip>
+      </div>
+
+      <Separator orientation="vertical" className="mx-1 h-5" />
+
+      {/* Project Save / Load */}
+      <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => saveProjectToFile()}
+            >
+              Save
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Save project (Ctrl+S)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => loadProjectFromFile()}
+            >
+              Open
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Open project (Ctrl+O)</TooltipContent>
+        </Tooltip>
+      </div>
+
       <div className="flex-1" />
-      <span className="text-xs text-muted-foreground">Phase 2</span>
+      <span className="text-xs text-muted-foreground">Phase 4</span>
+
+      <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+      <ImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   )
 }

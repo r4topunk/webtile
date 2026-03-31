@@ -1,5 +1,5 @@
 import * as THREE from "three"
-import type { PlacementPlane, SceneFace } from "./types"
+import type { PlacementPlane, SceneFace, Vec3 } from "./types"
 
 type Vec2 = [number, number]
 
@@ -134,4 +134,97 @@ export function computeTileUVs(
     [u1, v1], // v2: top-right
     [u1, v0], // v3: bottom-right
   ]
+}
+
+/**
+ * Compute the normal vector of a quad face from its first 3 vertices.
+ * Uses cross product of edge01 x edge03 (CCW winding).
+ */
+export function computeFaceNormal(face: SceneFace): Vec3 {
+  const [v0, v1, , v3] = face.vertices
+  // edge01 = v1 - v0
+  const e01: Vec3 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]]
+  // edge03 = v3 - v0
+  const e03: Vec3 = [v3[0] - v0[0], v3[1] - v0[1], v3[2] - v0[2]]
+  // cross = e01 x e03
+  const nx = e01[1] * e03[2] - e01[2] * e03[1]
+  const ny = e01[2] * e03[0] - e01[0] * e03[2]
+  const nz = e01[0] * e03[1] - e01[1] * e03[0]
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
+  if (len === 0) return [0, 1, 0]
+  return [nx / len, ny / len, nz / len]
+}
+
+/**
+ * Extrude a quad face outward along its normal by `distance`.
+ * Returns the offset top face + 4 side quads (5 faces total).
+ * The original face is NOT included — the caller should replace it.
+ */
+export function extrudeFace(face: SceneFace, distance: number): SceneFace[] {
+  const normal = computeFaceNormal(face)
+  const offset: Vec3 = [
+    normal[0] * distance,
+    normal[1] * distance,
+    normal[2] * distance,
+  ]
+
+  // Original vertices
+  const [v0, v1, v2, v3] = face.vertices
+
+  // Offset vertices (the new top face)
+  const ov0: Vec3 = [v0[0] + offset[0], v0[1] + offset[1], v0[2] + offset[2]]
+  const ov1: Vec3 = [v1[0] + offset[0], v1[1] + offset[1], v1[2] + offset[2]]
+  const ov2: Vec3 = [v2[0] + offset[0], v2[1] + offset[1], v2[2] + offset[2]]
+  const ov3: Vec3 = [v3[0] + offset[0], v3[1] + offset[1], v3[2] + offset[2]]
+
+  // Default UVs for side faces (stretch the full 0-1 range)
+  const defaultUVs: [Vec2, Vec2, Vec2, Vec2] = [
+    [0, 0],
+    [0, 1],
+    [1, 1],
+    [1, 0],
+  ]
+
+  // Top face — keeps the original face's tileRef and UVs
+  const topFace: SceneFace = {
+    id: crypto.randomUUID(),
+    vertices: [ov0, ov1, ov2, ov3],
+    tileRef: face.tileRef,
+    uvs: face.uvs.map((uv) => [...uv]) as [Vec2, Vec2, Vec2, Vec2],
+  }
+
+  // 4 side quads connecting original vertices to offset vertices
+  // Side 0: v0-v1 edge -> ov0-ov1 (left side)
+  const side0: SceneFace = {
+    id: crypto.randomUUID(),
+    vertices: [v0, v1, ov1, ov0],
+    tileRef: null,
+    uvs: defaultUVs,
+  }
+
+  // Side 1: v1-v2 edge -> ov1-ov2 (top side)
+  const side1: SceneFace = {
+    id: crypto.randomUUID(),
+    vertices: [v1, v2, ov2, ov1],
+    tileRef: null,
+    uvs: defaultUVs,
+  }
+
+  // Side 2: v2-v3 edge -> ov2-ov3 (right side)
+  const side2: SceneFace = {
+    id: crypto.randomUUID(),
+    vertices: [v2, v3, ov3, ov2],
+    tileRef: null,
+    uvs: defaultUVs,
+  }
+
+  // Side 3: v3-v0 edge -> ov3-ov0 (bottom side)
+  const side3: SceneFace = {
+    id: crypto.randomUUID(),
+    vertices: [v3, v0, ov0, ov3],
+    tileRef: null,
+    uvs: defaultUVs,
+  }
+
+  return [topFace, side0, side1, side2, side3]
 }

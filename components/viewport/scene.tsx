@@ -13,12 +13,14 @@ import type { Vec3 } from "@/lib/types"
 
 function SelectedTransformControls() {
   const tool = useEditorStore((s) => s.tool)
+  const mode = useEditorStore((s) => s.mode)
   const selectedIds = useSceneStore((s) => s.selectedIds)
   const objects = useSceneStore((s) => s.objects)
   const transformRef = useRef<THREE.Group>(null)
 
+  // Only show transform controls in object mode with select tool
   const singleSelected =
-    tool === "select" && selectedIds.length === 1
+    tool === "select" && mode === "object" && selectedIds.length === 1
       ? objects[selectedIds[0]]
       : null
 
@@ -54,10 +56,17 @@ function SelectedTransformControls() {
 
 function SceneClickCatcher() {
   const tool = useEditorStore((s) => s.tool)
+  const mode = useEditorStore((s) => s.mode)
 
   function handlePointerMissed() {
-    if (tool !== "select") return
-    useSceneStore.getState().clearSelection()
+    const store = useSceneStore.getState()
+    if (tool === "select" || mode !== "object") {
+      store.clearSelection()
+    }
+    // Always clear sub-object selections when clicking empty space
+    store.clearFaceSelection()
+    store.clearVertexSelection()
+    store.clearEdgeSelection()
   }
 
   return (

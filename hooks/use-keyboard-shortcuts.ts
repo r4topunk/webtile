@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { useEditorStore } from "@/store/editor-store"
 import { useSceneStore } from "@/store/scene-store"
+import { saveProjectToFile, loadProjectFromFile } from "@/lib/file-io"
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -25,6 +26,27 @@ export function useKeyboardShortcuts() {
         return
       }
 
+      // Ctrl+S — save project
+      if (ctrl && e.key.toLowerCase() === "s") {
+        e.preventDefault()
+        saveProjectToFile()
+        return
+      }
+
+      // Ctrl+O — open project
+      if (ctrl && e.key.toLowerCase() === "o") {
+        e.preventDefault()
+        loadProjectFromFile()
+        return
+      }
+
+      // Ctrl+E — open export dialog
+      if (ctrl && e.key.toLowerCase() === "e") {
+        e.preventDefault()
+        useEditorStore.getState().setExportDialogOpen(true)
+        return
+      }
+
       // Ctrl+D — duplicate selected
       if (ctrl && e.key.toLowerCase() === "d") {
         e.preventDefault()
@@ -38,36 +60,79 @@ export function useKeyboardShortcuts() {
       // Non-modifier shortcuts
       if (ctrl) return
 
+      const editorState = useEditorStore.getState()
+      const sceneState = useSceneStore.getState()
+
       switch (e.key) {
         case "v":
         case "V":
-          useEditorStore.getState().setTool("select")
+          editorState.setTool("select")
           break
         case "b":
         case "B":
-          useEditorStore.getState().setTool("place")
+          editorState.setTool("place")
           break
+        case "p":
+        case "P":
+          editorState.setTool("paint")
+          break
+        case "Tab": {
+          e.preventDefault()
+          const modeOrder: Array<"object" | "face" | "vertex" | "edge"> = [
+            "object",
+            "face",
+            "vertex",
+            "edge",
+          ]
+          const currentIdx = modeOrder.indexOf(editorState.mode)
+          const nextIdx = (currentIdx + 1) % modeOrder.length
+          editorState.setMode(modeOrder[nextIdx])
+          // Clear sub-object selections when switching modes
+          sceneState.clearFaceSelection()
+          sceneState.clearVertexSelection()
+          sceneState.clearEdgeSelection()
+          break
+        }
+        case "e":
+        case "E": {
+          // Extrude selected faces
+          if (editorState.mode === "face") {
+            const { selectedIds, selectedFaceIds, extrudeFaces } = sceneState
+            if (selectedIds.length === 1 && selectedFaceIds.length > 0) {
+              extrudeFaces(selectedIds[0], selectedFaceIds)
+            }
+          }
+          break
+        }
         case "1":
-          useEditorStore.getState().setPlacementPlane("xz")
+          editorState.setPlacementPlane("xz")
           break
         case "2":
-          useEditorStore.getState().setPlacementPlane("xy")
+          editorState.setPlacementPlane("xy")
           break
         case "3":
-          useEditorStore.getState().setPlacementPlane("yz")
+          editorState.setPlacementPlane("yz")
           break
         case "5":
-          useEditorStore.getState().toggleCameraType()
+          editorState.toggleCameraType()
           break
         case "g":
         case "G":
-          useEditorStore.getState().toggleGrid()
+          editorState.toggleGrid()
           break
         case "Delete":
         case "Backspace": {
-          const { selectedIds, removeObjects } = useSceneStore.getState()
-          if (selectedIds.length > 0) {
-            removeObjects(selectedIds)
+          // In face mode, delete selected faces instead of objects
+          if (editorState.mode === "face") {
+            const { selectedIds, selectedFaceIds, removeFaces } = sceneState
+            if (selectedIds.length === 1 && selectedFaceIds.length > 0) {
+              removeFaces(selectedIds[0], selectedFaceIds)
+            }
+          } else {
+            const { selectedIds, removeObjects } = sceneState
+            if (selectedIds.length > 0) {
+              removeObjects(selectedIds)
+            }
           }
           break
         }
