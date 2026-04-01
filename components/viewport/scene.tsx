@@ -13,6 +13,7 @@ import type { Vec3 } from "@/lib/types"
 function SelectedTransformControls() {
   const tool = useEditorStore((s) => s.tool)
   const mode = useEditorStore((s) => s.mode)
+  const transformMode = useEditorStore((s) => s.transformMode)
   const selectedIds = useSceneStore((s) => s.selectedIds)
   const objects = useSceneStore((s) => s.objects)
   const groupRef = useRef<THREE.Group>(null!)
@@ -44,6 +45,7 @@ function SelectedTransformControls() {
       {ready && groupRef.current && (
         <TransformControls
           object={groupRef.current}
+          mode={transformMode}
           onObjectChange={() => {
             if (!groupRef.current || !singleSelected) return
             const pos = groupRef.current.position

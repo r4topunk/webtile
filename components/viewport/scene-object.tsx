@@ -148,6 +148,9 @@ function VertexDots({ obj }: { obj: SceneObject }) {
         store.setSelectedVertices([index])
       }
 
+      // Pause undo tracking — resume on pointer up so entire drag = one undo step
+      useSceneStore.temporal.getState().pause()
+
       const worldPoint = e.point.clone()
       dragPlaneRef.current = buildPlaneForAxes(worldPoint, "placement")
       dragOriginRef.current.copy(worldPoint)
@@ -261,6 +264,9 @@ function VertexDots({ obj }: { obj: SceneObject }) {
   })
 
   const handlePointerUp = useCallback(() => {
+    if (draggingRef.current) {
+      useSceneStore.temporal.getState().resume()
+    }
     draggingRef.current = false
     activeLockRef.current = null
     lastPlaneKeyRef.current = null
@@ -281,7 +287,12 @@ function VertexDots({ obj }: { obj: SceneObject }) {
       if (e.key === "y" || e.key === "Y") keyStateRef.current.y = false
       if (e.key === "z" || e.key === "Z") keyStateRef.current.z = false
     }
-    const onPointerUp = () => { draggingRef.current = false }
+    const onPointerUp = () => {
+      if (draggingRef.current) {
+        useSceneStore.temporal.getState().resume()
+      }
+      draggingRef.current = false
+    }
     window.addEventListener("keydown", onKeyDown)
     window.addEventListener("keyup", onKeyUp)
     window.addEventListener("pointerup", onPointerUp)
@@ -434,6 +445,10 @@ export function SceneObjectMesh({ obj, isSelected }: SceneObjectMeshProps) {
   const mode = useEditorStore((s) => s.mode)
   const groupRef = useRef<THREE.Group>(null)
 
+  // Ref for paint dragging
+  const isPaintingRef = useRef(false)
+  const lastPaintedFaceRef = useRef<string | null>(null)
+
   const geometry = useMemo(() => buildGeometryFromFaces(obj.faces), [obj.faces])
 
   useEffect(() => {
@@ -447,6 +462,65 @@ export function SceneObjectMesh({ obj, isSelected }: SceneObjectMeshProps) {
     if (!tileset) return null
     return loadTilesetTexture(tileset.imageUrl)
   }, [obj.faces, tilesets])
+
+  /**
+   * Paint the face under the given R3F pointer event.
+   */
+  const paintFaceAtEvent = useCallback(
+    (e: ThreeEvent<PointerEvent | MouseEvent>) => {
+      const faceIndex = e.faceIndex != null ? Math.floor(e.faceIndex / 2) : -1
+      if (faceIndex < 0 || faceIndex >= obj.faces.length) return
+      const face = obj.faces[faceIndex]
+      // Skip if we already painted this face in the current drag
+      if (face.id === lastPaintedFaceRef.current) return
+      lastPaintedFaceRef.current = face.id
+      const selectedTile = useTilesetStore.getState().selectedTile
+      if (!selectedTile) return
+      const tileset = useTilesetStore.getState().tilesets[selectedTile.tilesetId]
+      if (!tileset) return
+      useSceneStore.getState().paintFace(
+        obj.id, face.id, selectedTile, tileset.columns, tileset.rows,
+      )
+    },
+    [obj.id, obj.faces],
+  )
+
+  const handlePointerDown = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      if (tool !== "paint" || obj.locked) return
+
+      e.stopPropagation()
+      // Pause undo tracking — resume on pointer up so entire paint drag = one undo step
+      useSceneStore.temporal.getState().pause()
+      isPaintingRef.current = true
+      lastPaintedFaceRef.current = null
+      paintFaceAtEvent(e)
+    },
+    [tool, obj.locked, paintFaceAtEvent],
+  )
+
+  const handlePointerMove = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      if (!isPaintingRef.current || tool !== "paint") return
+
+      e.stopPropagation()
+      paintFaceAtEvent(e)
+    },
+    [tool, paintFaceAtEvent],
+  )
+
+  // Listen for global pointerup to stop paint dragging
+  useEffect(() => {
+    const handleUp = () => {
+      if (isPaintingRef.current) {
+        useSceneStore.temporal.getState().resume()
+      }
+      isPaintingRef.current = false
+      lastPaintedFaceRef.current = null
+    }
+    window.addEventListener("pointerup", handleUp)
+    return () => window.removeEventListener("pointerup", handleUp)
+  }, [])
 
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
@@ -479,19 +553,9 @@ export function SceneObjectMesh({ obj, isSelected }: SceneObjectMeshProps) {
         return
       }
 
-      // Paint mode: paint face
+      // Paint mode is now handled by pointerDown/pointerMove — skip here
       if (tool === "paint") {
         e.stopPropagation()
-        const faceIndex = e.faceIndex != null ? Math.floor(e.faceIndex / 2) : -1
-        if (faceIndex < 0 || faceIndex >= obj.faces.length) return
-        const face = obj.faces[faceIndex]
-        const selectedTile = useTilesetStore.getState().selectedTile
-        if (!selectedTile) return
-        const tileset = useTilesetStore.getState().tilesets[selectedTile.tilesetId]
-        if (!tileset) return
-        useSceneStore.getState().paintFace(
-          obj.id, face.id, selectedTile, tileset.columns, tileset.rows,
-        )
         return
       }
 
@@ -521,6 +585,8 @@ export function SceneObjectMesh({ obj, isSelected }: SceneObjectMeshProps) {
       rotation={obj.rotation}
       scale={obj.scale}
       onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
     >
       <mesh geometry={geometry}>
         {texture ? (

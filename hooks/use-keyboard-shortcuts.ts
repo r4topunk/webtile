@@ -5,6 +5,7 @@ import { useEditorStore } from "@/store/editor-store"
 import { useSceneStore } from "@/store/scene-store"
 import { useAnimationStore } from "@/store/animation-store"
 import { saveProjectToFile, loadProjectFromFile } from "@/lib/file-io"
+import { useToastStore } from "@/store/toast-store"
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
@@ -21,8 +22,10 @@ export function useKeyboardShortcuts() {
         e.preventDefault()
         if (shift) {
           useSceneStore.temporal.getState().redo()
+          useToastStore.getState().addToast("Redo", "info")
         } else {
           useSceneStore.temporal.getState().undo()
+          useToastStore.getState().addToast("Undo", "info")
         }
         return
       }
@@ -58,6 +61,20 @@ export function useKeyboardShortcuts() {
         return
       }
 
+      // Shift + Plus/Minus — adjust placement offset
+      if (shift && !ctrl) {
+        if (e.key === "+" || e.key === "=") {
+          e.preventDefault()
+          useEditorStore.getState().incrementPlacementOffset()
+          return
+        }
+        if (e.key === "-" || e.key === "_") {
+          e.preventDefault()
+          useEditorStore.getState().decrementPlacementOffset()
+          return
+        }
+      }
+
       // Non-modifier shortcuts
       if (ctrl) return
 
@@ -66,6 +83,9 @@ export function useKeyboardShortcuts() {
       const animState = useAnimationStore.getState()
 
       switch (e.key) {
+        case "?":
+          editorState.toggleKeyboardOverlay()
+          break
         case "v":
         case "V":
           editorState.setTool("select")
@@ -139,6 +159,9 @@ export function useKeyboardShortcuts() {
         case "3":
           editorState.setPlacementPlane("yz")
           break
+        case "0":
+          editorState.setCameraPreset("reset")
+          break
         case "5":
           editorState.toggleCameraType()
           break
@@ -168,8 +191,13 @@ export function useKeyboardShortcuts() {
         }
         case "Delete":
         case "Backspace": {
-          // In face mode, delete selected faces instead of objects
-          if (editorState.mode === "face") {
+          if (editorState.mode === "vertex") {
+            // Delete faces containing selected vertices
+            const { selectedIds, selectedVertexIndices, deleteVertices } = sceneState
+            if (selectedIds.length === 1 && selectedVertexIndices.length > 0) {
+              deleteVertices(selectedIds[0], selectedVertexIndices)
+            }
+          } else if (editorState.mode === "face") {
             const { selectedIds, selectedFaceIds, removeFaces } = sceneState
             if (selectedIds.length === 1 && selectedFaceIds.length > 0) {
               removeFaces(selectedIds[0], selectedFaceIds)
@@ -178,6 +206,17 @@ export function useKeyboardShortcuts() {
             const { selectedIds, removeObjects } = sceneState
             if (selectedIds.length > 0) {
               removeObjects(selectedIds)
+            }
+          }
+          break
+        }
+        case "s":
+        case "S": {
+          if (editorState.mode === "edge") {
+            const { selectedIds, selectedEdgeIndices, subdivideEdge } = sceneState
+            if (selectedIds.length === 1 && selectedEdgeIndices.length > 0) {
+              // Subdivide the first selected edge
+              subdivideEdge(selectedIds[0], selectedEdgeIndices[0])
             }
           }
           break

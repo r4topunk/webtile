@@ -1,12 +1,15 @@
 "use client"
 
+import { useCallback, useEffect, useRef } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
 import { useTilesetStore } from "@/store/tileset-store"
+import { generateSampleTileset } from "@/lib/sample-tileset"
 import { TilesetLoader } from "./tileset-loader"
 import { TilePicker } from "./tile-picker"
-import { X } from "lucide-react"
+import { X, Palette } from "lucide-react"
+import type { Tileset } from "@/lib/types"
 
 function TilesetSelector() {
   const tilesets = useTilesetStore((s) => s.tilesets)
@@ -91,10 +94,57 @@ function TilesetSelector() {
   )
 }
 
+function useAutoLoadSample() {
+  const tilesets = useTilesetStore((s) => s.tilesets)
+  const addTileset = useTilesetStore((s) => s.addTileset)
+  const didAutoLoad = useRef(false)
+
+  useEffect(() => {
+    if (didAutoLoad.current) return
+    if (Object.keys(tilesets).length > 0) return
+    didAutoLoad.current = true
+    loadSampleTileset(addTileset)
+  }, [tilesets, addTileset])
+}
+
+function loadSampleTileset(
+  addTileset: (tileset: Tileset) => void,
+) {
+  const sample = generateSampleTileset()
+  addTileset({
+    id: crypto.randomUUID(),
+    name: sample.name,
+    imageUrl: sample.dataUrl,
+    tileWidth: sample.tileWidth,
+    tileHeight: sample.tileHeight,
+    columns: sample.columns,
+    rows: sample.rows,
+  })
+}
+
 export function TilesetPanel() {
+  const addTileset = useTilesetStore((s) => s.addTileset)
+  useAutoLoadSample()
+
+  const handleLoadSample = useCallback(() => {
+    loadSampleTileset(addTileset)
+  }, [addTileset])
+
   return (
     <div className="flex h-full flex-col">
-      <div className="px-2 py-1.5 text-xs font-semibold">Tileset</div>
+      <div className="flex items-center justify-between px-2 py-1.5">
+        <span className="text-xs font-semibold">Tileset</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 gap-1 px-1.5 text-[10px]"
+          onClick={handleLoadSample}
+          title="Load sample tileset"
+        >
+          <Palette className="h-3 w-3" />
+          Sample
+        </Button>
+      </div>
       <Separator />
       <TilesetLoader />
       <Separator />

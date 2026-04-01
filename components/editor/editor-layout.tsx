@@ -15,6 +15,9 @@ import { Timeline } from "@/components/animation/timeline"
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
 import { useAutoSave } from "@/hooks/use-auto-save"
 import { useEditorStore } from "@/store/editor-store"
+import { ToastContainer } from "@/components/ui/toast-notification"
+import { KeyboardOverlay } from "./keyboard-overlay"
+import { Onboarding } from "./onboarding"
 
 export default function EditorLayout() {
   useKeyboardShortcuts()
@@ -89,6 +92,9 @@ export default function EditorLayout() {
         <StatusBar />
       </div>
       <AutosaveRestoreDialog />
+      <ToastContainer />
+      <KeyboardOverlay />
+      <Onboarding />
     </TooltipProvider>
   )
 }

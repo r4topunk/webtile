@@ -39,6 +39,6 @@ export type Tileset = {
 }
 
 export type PlacementPlane = "xz" | "xy" | "yz"
-export type EditorTool = "select" | "place" | "paint"
+export type EditorTool = "select" | "place" | "paint" | "erase"
 export type EditMode = "object" | "face" | "vertex" | "edge"
 export type CameraType = "orthographic" | "perspective"

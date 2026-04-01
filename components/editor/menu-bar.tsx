@@ -26,6 +26,10 @@ export function EditorMenuBar() {
   const setCameraPreset = useEditorStore((s) => s.setCameraPreset)
   const showTimeline = useEditorStore((s) => s.showTimeline)
   const toggleTimeline = useEditorStore((s) => s.toggleTimeline)
+  const setTool = useEditorStore((s) => s.setTool)
+  const setMode = useEditorStore((s) => s.setMode)
+  const toggleKeyboardOverlay = useEditorStore((s) => s.toggleKeyboardOverlay)
+  const setShowOnboarding = useEditorStore((s) => s.setShowOnboarding)
 
   const exportOpen = useEditorStore((s) => s.exportDialogOpen)
   const setExportOpen = useEditorStore((s) => s.setExportDialogOpen)
@@ -87,6 +91,35 @@ export function EditorMenuBar() {
             </MenubarContent>
           </MenubarMenu>
 
+          {/* Tools */}
+          <MenubarMenu>
+            <MenubarTrigger className="h-6 px-2 text-xs">Tools</MenubarTrigger>
+            <MenubarContent>
+              <MenubarItem onClick={() => setTool("select")}>
+                Select Tool <MenubarShortcut>V</MenubarShortcut>
+              </MenubarItem>
+              <MenubarItem onClick={() => setTool("place")}>
+                Place Tool <MenubarShortcut>B</MenubarShortcut>
+              </MenubarItem>
+              <MenubarItem onClick={() => setTool("paint")}>
+                Paint Tool <MenubarShortcut>P</MenubarShortcut>
+              </MenubarItem>
+              <MenubarSeparator />
+              <MenubarItem onClick={() => setMode("object")}>
+                Object Mode
+              </MenubarItem>
+              <MenubarItem onClick={() => setMode("face")}>
+                Face Mode
+              </MenubarItem>
+              <MenubarItem onClick={() => setMode("vertex")}>
+                Vertex Mode
+              </MenubarItem>
+              <MenubarItem onClick={() => setMode("edge")}>
+                Edge Mode
+              </MenubarItem>
+            </MenubarContent>
+          </MenubarMenu>
+
           {/* View */}
           <MenubarMenu>
             <MenubarTrigger className="h-6 px-2 text-xs">View</MenubarTrigger>
@@ -115,8 +148,29 @@ export function EditorMenuBar() {
                   <MenubarItem onClick={() => setCameraPreset("top")}>
                     Top <MenubarShortcut>Num 7</MenubarShortcut>
                   </MenubarItem>
+                  <MenubarSeparator />
+                  <MenubarItem onClick={() => setCameraPreset("reset")}>
+                    Reset Camera <MenubarShortcut>0</MenubarShortcut>
+                  </MenubarItem>
                 </MenubarSubContent>
               </MenubarSub>
+            </MenubarContent>
+          </MenubarMenu>
+
+          {/* Help */}
+          <MenubarMenu>
+            <MenubarTrigger className="h-6 px-2 text-xs">Help</MenubarTrigger>
+            <MenubarContent>
+              <MenubarItem onClick={toggleKeyboardOverlay}>
+                Keyboard Shortcuts <MenubarShortcut>?</MenubarShortcut>
+              </MenubarItem>
+              <MenubarItem onClick={() => setShowOnboarding(true)}>
+                Getting Started
+              </MenubarItem>
+              <MenubarSeparator />
+              <MenubarItem onClick={() => console.log("webtile — 3D tile editor")}>
+                About Webtile
+              </MenubarItem>
             </MenubarContent>
           </MenubarMenu>
         </Menubar>

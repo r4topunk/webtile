@@ -1,7 +1,8 @@
 import { create } from "zustand"
 import type { CameraType, EditMode, EditorTool, PlacementPlane } from "@/lib/types"
 
-export type CameraPreset = "front" | "top" | "right" | null
+export type CameraPreset = "front" | "top" | "right" | "reset" | null
+export type TransformMode = "translate" | "rotate" | "scale"
 
 interface EditorState {
   tool: EditorTool
@@ -18,9 +19,13 @@ interface EditorState {
   cameraPreset: CameraPreset
   showTimeline: boolean
   focusTarget: [number, number, number] | null
+  transformMode: TransformMode
+  showKeyboardOverlay: boolean
+  showOnboarding: boolean
 
   setTool: (tool: EditorTool) => void
   setMode: (mode: EditMode) => void
+  setTransformMode: (mode: TransformMode) => void
   setCameraType: (type: CameraType) => void
   toggleCameraType: () => void
   setGridSize: (size: number) => void
@@ -37,6 +42,8 @@ interface EditorState {
   setCameraPreset: (preset: CameraPreset) => void
   toggleTimeline: () => void
   setFocusTarget: (target: [number, number, number] | null) => void
+  toggleKeyboardOverlay: () => void
+  setShowOnboarding: (show: boolean) => void
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -54,9 +61,13 @@ export const useEditorStore = create<EditorState>((set) => ({
   cameraPreset: null,
   showTimeline: false,
   focusTarget: null,
+  transformMode: "translate",
+  showKeyboardOverlay: false,
+  showOnboarding: false,
 
   setTool: (tool) => set({ tool }),
   setMode: (mode) => set({ mode }),
+  setTransformMode: (mode) => set({ transformMode: mode }),
   setCameraType: (cameraType) => set({ cameraType }),
   toggleCameraType: () =>
     set((s) => ({
@@ -76,4 +87,6 @@ export const useEditorStore = create<EditorState>((set) => ({
   setCameraPreset: (cameraPreset) => set({ cameraPreset }),
   toggleTimeline: () => set((s) => ({ showTimeline: !s.showTimeline })),
   setFocusTarget: (focusTarget) => set({ focusTarget }),
+  toggleKeyboardOverlay: () => set((s) => ({ showKeyboardOverlay: !s.showKeyboardOverlay })),
+  setShowOnboarding: (showOnboarding) => set({ showOnboarding }),
 }))

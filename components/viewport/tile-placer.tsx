@@ -8,7 +8,7 @@ import { useSceneStore } from "@/store/scene-store"
 import { useTilesetStore } from "@/store/tileset-store"
 import { createTileFace } from "@/lib/geometry"
 import { loadTilesetTexture } from "@/lib/texture-utils"
-import type { PlacementPlane } from "@/lib/types"
+import type { PlacementPlane, SceneFace } from "@/lib/types"
 
 function buildPlane(plane: PlacementPlane, offset: number): THREE.Plane {
   switch (plane) {
@@ -85,26 +85,131 @@ function eventToNDC(e: MouseEvent, canvas: HTMLCanvasElement): THREE.Vector2 {
   )
 }
 
+/**
+ * Compute the center of a face projected onto a placement plane.
+ * Returns [gridA, gridB] if the face lies on the given plane+offset, else null.
+ */
+function faceCenter(face: SceneFace, plane: PlacementPlane, offset: number): [number, number] | null {
+  const cx = (face.vertices[0][0] + face.vertices[1][0] + face.vertices[2][0] + face.vertices[3][0]) / 4
+  const cy = (face.vertices[0][1] + face.vertices[1][1] + face.vertices[2][1] + face.vertices[3][1]) / 4
+  const cz = (face.vertices[0][2] + face.vertices[1][2] + face.vertices[2][2] + face.vertices[3][2]) / 4
+
+  const tolerance = 0.1
+  switch (plane) {
+    case "xz":
+      if (Math.abs(cy - offset) < tolerance) return [cx, cz]
+      break
+    case "xy":
+      if (Math.abs(cz - offset) < tolerance) return [cx, cy]
+      break
+    case "yz":
+      if (Math.abs(cx - offset) < tolerance) return [cy, cz]
+      break
+  }
+  return null
+}
+
+/**
+ * Erase the tile face at a given grid position on the current placement plane.
+ */
+function eraseAtPosition(pos: [number, number], plane: PlacementPlane, offset: number) {
+  const { objects, removeFaces, removeObjects } = useSceneStore.getState()
+
+  for (const obj of Object.values(objects)) {
+    for (const face of obj.faces) {
+      const center = faceCenter(face, plane, offset)
+      if (center && Math.floor(center[0]) === pos[0] && Math.floor(center[1]) === pos[1]) {
+        if (obj.faces.length === 1) {
+          removeObjects([obj.id])
+        } else {
+          removeFaces(obj.id, [face.id])
+        }
+        return // Only erase one per position
+      }
+    }
+  }
+}
+
 export function TilePlacer() {
   const tool = useEditorStore((s) => s.tool)
   const placementPlane = useEditorStore((s) => s.placementPlane)
   const placementOffset = useEditorStore((s) => s.placementOffset)
   const selectedTile = useTilesetStore((s) => s.selectedTile)
   const tilesets = useTilesetStore((s) => s.tilesets)
-  const placeNewTile = useSceneStore((s) => s.placeNewTile)
 
   const [ghostPos, setGhostPos] = useState<[number, number] | null>(null)
   const ghostPosRef = useRef<[number, number] | null>(null)
   const { camera, pointer, gl } = useThree()
+
+  // Refs for drag-placing / drag-erasing
+  const isDragging = useRef(false)
+  const lastPlacedPos = useRef<string | null>(null)
 
   const threePlane = useMemo(
     () => buildPlane(placementPlane, placementOffset),
     [placementPlane, placementOffset],
   )
 
+  /**
+   * Place or erase a tile at the NDC position.
+   */
+  function placeTileAt(ndc: THREE.Vector2) {
+    const currentTile = useTilesetStore.getState().selectedTile
+    const currentPlane = useEditorStore.getState().placementPlane
+    const currentOffset = useEditorStore.getState().placementOffset
+    const currentTool = useEditorStore.getState().tool
+    if (currentTool !== "place" && currentTool !== "erase") return
+
+    const plane = buildPlane(currentPlane, currentOffset)
+    const hit = raycastPlane(ndc, camera, plane)
+    if (!hit) return
+
+    const pos = toGridCoords(hit, currentPlane)
+    const key = `${pos[0]},${pos[1]}`
+    if (key === lastPlacedPos.current) return
+    lastPlacedPos.current = key
+
+    if (currentTool === "erase") {
+      eraseAtPosition(pos, currentPlane, currentOffset)
+      return
+    }
+
+    // Place tool requires a selected tile
+    if (!currentTile) return
+
+    const allTilesets = useTilesetStore.getState().tilesets
+    const tileset = allTilesets[currentTile.tilesetId]
+    if (!tileset) return
+
+    for (let dy = 0; dy < currentTile.h; dy++) {
+      for (let dx = 0; dx < currentTile.w; dx++) {
+        const singleTileRef = {
+          tilesetId: currentTile.tilesetId,
+          x: currentTile.x + dx,
+          y: currentTile.y + dy,
+          w: 1,
+          h: 1,
+        }
+        const face = createTileFace(
+          pos[0] + dx,
+          pos[1] + dy,
+          singleTileRef,
+          tileset.columns,
+          tileset.rows,
+          currentPlane,
+          currentOffset,
+        )
+        useSceneStore.getState().placeNewTile(face)
+      }
+    }
+  }
+
   // Ghost preview tracking via useFrame — uses R3F's pointer (always fresh)
   useFrame(() => {
-    if (tool !== "place" || !selectedTile) {
+    const isActiveTool = tool === "place" || tool === "erase"
+    const needsTile = tool === "place"
+
+    if (!isActiveTool || (needsTile && !selectedTile)) {
       if (ghostPosRef.current !== null) {
         ghostPosRef.current = null
         setGhostPos(null)
@@ -132,60 +237,48 @@ export function TilePlacer() {
     }
   })
 
-  // Click handler — computes NDC from the actual click event coordinates
-  // (not from R3F's pointer which may be stale in the callback closure)
+  // Pointer handlers for drag-to-place and drag-to-erase
   useEffect(() => {
     const canvas = gl.domElement
 
-    function handleClick(e: MouseEvent) {
+    function handlePointerDown(e: MouseEvent) {
       if (e.button !== 0) return
-
       const currentTool = useEditorStore.getState().tool
-      const currentTile = useTilesetStore.getState().selectedTile
-      if (currentTool !== "place" || !currentTile) return
+      if (currentTool !== "place" && currentTool !== "erase") return
 
-      const currentPlane = useEditorStore.getState().placementPlane
-      const currentOffset = useEditorStore.getState().placementOffset
-      const plane = buildPlane(currentPlane, currentOffset)
-
-      // Compute NDC from event coordinates, not from captured pointer
+      // Pause undo tracking — resume on pointer up so entire drag = one undo step
+      useSceneStore.temporal.getState().pause()
+      isDragging.current = true
+      lastPlacedPos.current = null
       const ndc = eventToNDC(e, canvas)
-      const hit = raycastPlane(ndc, camera, plane)
-      if (!hit) return
-
-      const pos = toGridCoords(hit, currentPlane)
-      const allTilesets = useTilesetStore.getState().tilesets
-      const tileset = allTilesets[currentTile.tilesetId]
-      if (!tileset) return
-
-      for (let dy = 0; dy < currentTile.h; dy++) {
-        for (let dx = 0; dx < currentTile.w; dx++) {
-          const singleTileRef = {
-            tilesetId: currentTile.tilesetId,
-            x: currentTile.x + dx,
-            y: currentTile.y + dy,
-            w: 1,
-            h: 1,
-          }
-          const face = createTileFace(
-            pos[0] + dx,
-            pos[1] + dy,
-            singleTileRef,
-            tileset.columns,
-            tileset.rows,
-            currentPlane,
-            currentOffset,
-          )
-          useSceneStore.getState().placeNewTile(face)
-        }
-      }
+      placeTileAt(ndc)
     }
 
-    canvas.addEventListener("click", handleClick)
-    return () => canvas.removeEventListener("click", handleClick)
+    function handlePointerMove(e: MouseEvent) {
+      if (!isDragging.current) return
+      const ndc = eventToNDC(e, canvas)
+      placeTileAt(ndc)
+    }
+
+    function handlePointerUp() {
+      if (isDragging.current) {
+        useSceneStore.temporal.getState().resume()
+      }
+      isDragging.current = false
+      lastPlacedPos.current = null
+    }
+
+    canvas.addEventListener("pointerdown", handlePointerDown)
+    canvas.addEventListener("pointermove", handlePointerMove)
+    canvas.addEventListener("pointerup", handlePointerUp)
+    return () => {
+      canvas.removeEventListener("pointerdown", handlePointerDown)
+      canvas.removeEventListener("pointermove", handlePointerMove)
+      canvas.removeEventListener("pointerup", handlePointerUp)
+    }
   }, [gl, camera]) // Only depend on stable refs — reads fresh state inside
 
-  // Ghost preview texture
+  // Ghost preview texture (for place tool)
   const ghostTexture = useMemo(() => {
     if (!selectedTile) return null
     const tileset = tilesets[selectedTile.tilesetId]
@@ -215,10 +308,32 @@ export function TilePlacer() {
     return geo
   }, [selectedTile, tilesets])
 
+  // Eraser ghost geometry (simple 1x1 plane)
+  const eraserGeometry = useMemo(() => new THREE.PlaneGeometry(1, 1), [])
+
   useEffect(() => {
     return () => { ghostGeometry?.dispose() }
   }, [ghostGeometry])
 
+  // Eraser ghost: red semi-transparent square
+  if (tool === "erase" && ghostPos) {
+    return (
+      <mesh
+        geometry={eraserGeometry}
+        position={ghostWorldPos(ghostPos[0], ghostPos[1], placementPlane, placementOffset)}
+        rotation={ghostRotation(placementPlane)}
+      >
+        <meshBasicMaterial
+          color="#ff2222"
+          transparent
+          opacity={0.35}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    )
+  }
+
+  // Place ghost: tile preview
   if (!ghostPos || !ghostTexture || !ghostGeometry || !selectedTile) return null
 
   return (

@@ -10,6 +10,9 @@ import { Scene } from "./scene"
 import { AnimationPlayer } from "@/components/animation/animation-player"
 import { AxisGizmo } from "./axis-gizmo"
 import { CameraSync } from "./camera-sync"
+import { ModeIndicator } from "./mode-indicator"
+import { ViewportOverlays } from "./viewport-overlays"
+import { BoxSelectOverlay, BoxSelectProjector } from "./box-select"
 
 const CAMERA_PRESETS: Record<
   Exclude<CameraPreset, null>,
@@ -18,6 +21,7 @@ const CAMERA_PRESETS: Record<
   front: { position: [0, 0, 20], target: [0, 0, 0] },
   top: { position: [0, 20, 0], target: [0, 0, 0] },
   right: { position: [20, 0, 0], target: [0, 0, 0] },
+  reset: { position: [10, 10, 10], target: [0, 0, 0] },
 }
 
 function CameraPresetAnimator() {
@@ -203,12 +207,29 @@ function TrackpadHandler() {
   return null
 }
 
+/** Compute CSS cursor class from editor state */
+function useSmartCursor(): string {
+  const tool = useEditorStore((s) => s.tool)
+  const mode = useEditorStore((s) => s.mode)
+
+  if (tool === "place") return "cursor-crosshair"
+  if (tool === "paint") return "cursor-pointer"
+  if (mode === "vertex") return "cursor-default"
+  return "cursor-default"
+}
+
 export function Viewport() {
   const cameraType = useEditorStore((s) => s.cameraType)
   const cameraQuaternionRef = useRef(new THREE.Quaternion())
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  const cursorClass = useSmartCursor()
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-neutral-900">
+    <div
+      ref={wrapperRef}
+      className={`relative h-full w-full overflow-hidden bg-neutral-900 ${cursorClass}`}
+    >
       <Canvas
         style={{ position: "absolute", inset: 0 }}
         orthographic={cameraType === "orthographic"}
@@ -240,7 +261,11 @@ export function Viewport() {
         <Scene />
         <AnimationPlayer />
         <CameraPresetAnimator />
+        <ViewportOverlays />
+        <BoxSelectProjector />
       </Canvas>
+      <ModeIndicator />
+      <BoxSelectOverlay containerRef={wrapperRef} />
       <AxisGizmo quaternionRef={cameraQuaternionRef} />
     </div>
   )

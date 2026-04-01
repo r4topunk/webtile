@@ -3,6 +3,7 @@ import { immer } from "zustand/middleware/immer"
 import { temporal } from "zundo"
 import type { SceneFace, SceneObject, TileRef, Vec2, Vec3 } from "@/lib/types"
 import { extrudeFace, computeTileUVs } from "@/lib/geometry"
+import { useToastStore } from "@/store/toast-store"
 
 interface SceneState {
   objects: Record<string, SceneObject>
@@ -46,10 +47,14 @@ interface SceneState {
   clearVertexSelection: () => void
   moveVertices: (objectId: string, vertexIndices: number[], delta: Vec3) => void
 
+  // Vertex mode (delete)
+  deleteVertices: (objectId: string, vertexIndices: number[]) => void
+
   // Edge mode
   setSelectedEdges: (edges: [number, number][]) => void
   toggleEdgeSelection: (edge: [number, number]) => void
   clearEdgeSelection: () => void
+  subdivideEdge: (objectId: string, edgeIndices: [number, number]) => void
 
   // Paint mode
   paintFace: (objectId: string, faceId: string, tileRef: TileRef, tilesetColumns: number, tilesetRows: number) => void
@@ -88,7 +93,7 @@ export const useSceneStore = create<SceneState>()(
           state.selectedIds = state.selectedIds.filter((sid) => sid !== id)
         }),
 
-      removeObjects: (ids) =>
+      removeObjects: (ids) => {
         set((state) => {
           const idSet = new Set(ids)
           for (const id of ids) {
@@ -96,7 +101,9 @@ export const useSceneStore = create<SceneState>()(
           }
           state.objectOrder = state.objectOrder.filter((oid) => !idSet.has(oid))
           state.selectedIds = state.selectedIds.filter((sid) => !idSet.has(sid))
-        }),
+        })
+        useToastStore.getState().addToast("Objects deleted", "success")
+      },
 
       addFaceToObject: (objectId, face) =>
         set((state) => {
@@ -203,6 +210,7 @@ export const useSceneStore = create<SceneState>()(
           }
           state.selectedIds = newIds
         })
+        useToastStore.getState().addToast("Objects duplicated", "success")
         return newIds
       },
 
@@ -239,7 +247,7 @@ export const useSceneStore = create<SceneState>()(
         }),
       clearFaceSelection: () => set({ selectedFaceIds: [] }),
 
-      removeFaces: (objectId, faceIds) =>
+      removeFaces: (objectId, faceIds) => {
         set((state) => {
           const obj = state.objects[objectId]
           if (!obj) return
@@ -251,9 +259,11 @@ export const useSceneStore = create<SceneState>()(
             delete state.objects[objectId]
             state.selectedIds = state.selectedIds.filter((id) => id !== objectId)
           }
-        }),
+        })
+        useToastStore.getState().addToast("Faces deleted", "success")
+      },
 
-      extrudeFaces: (objectId, faceIds, distance = 1) =>
+      extrudeFaces: (objectId, faceIds, distance = 1) => {
         set((state) => {
           const obj = state.objects[objectId]
           if (!obj) return
@@ -275,7 +285,9 @@ export const useSceneStore = create<SceneState>()(
           obj.faces.push(...facesToAdd)
           // Select the new top faces
           state.selectedFaceIds = newFaceIds
-        }),
+        })
+        useToastStore.getState().addToast("Faces extruded", "success")
+      },
 
       // Vertex mode
       setSelectedVertices: (indices) => set({ selectedVertexIndices: indices }),
@@ -313,6 +325,45 @@ export const useSceneStore = create<SceneState>()(
           }
         }),
 
+      deleteVertices: (objectId, vertexIndices) => {
+        set((state) => {
+          const obj = state.objects[objectId]
+          if (!obj) return
+
+          // Convert vertex indices to face indices
+          // Each face has 4 vertices, so faceIndex = Math.floor(vertexIndex / 4)
+          const faceIndicesToRemove = new Set<number>()
+          for (const vi of vertexIndices) {
+            faceIndicesToRemove.add(Math.floor(vi / 4))
+          }
+
+          // Get face IDs to remove
+          const faceIdsToRemove = new Set<string>()
+          obj.faces.forEach((face, i) => {
+            if (faceIndicesToRemove.has(i)) {
+              faceIdsToRemove.add(face.id)
+            }
+          })
+
+          // Remove faces
+          obj.faces = obj.faces.filter((f) => !faceIdsToRemove.has(f.id))
+
+          // Clear vertex selection
+          state.selectedVertexIndices = []
+          state.selectedFaceIds = state.selectedFaceIds.filter(
+            (id) => !faceIdsToRemove.has(id),
+          )
+
+          // If object has no faces left, remove it
+          if (obj.faces.length === 0) {
+            delete state.objects[objectId]
+            state.objectOrder = state.objectOrder.filter((id) => id !== objectId)
+            state.selectedIds = state.selectedIds.filter((id) => id !== objectId)
+          }
+        })
+        useToastStore.getState().addToast("Vertices deleted", "success")
+      },
+
       // Edge mode
       setSelectedEdges: (edges) => set({ selectedEdgeIndices: edges }),
       toggleEdgeSelection: (edge) =>
@@ -328,8 +379,120 @@ export const useSceneStore = create<SceneState>()(
         }),
       clearEdgeSelection: () => set({ selectedEdgeIndices: [] }),
 
+      subdivideEdge: (objectId, edgeIndices) => {
+        set((state) => {
+          const obj = state.objects[objectId]
+          if (!obj) return
+
+          const [idxA, idxB] = edgeIndices
+          const faceIdxA = Math.floor(idxA / 4)
+          const faceIdxB = Math.floor(idxB / 4)
+
+          // The edge must be on the same face
+          if (faceIdxA !== faceIdxB) return
+
+          const faceIdx = faceIdxA
+          const face = obj.faces[faceIdx]
+          if (!face) return
+
+          const localA = idxA % 4
+          const localB = idxB % 4
+
+          // Check if edge is consecutive (not diagonal)
+          const isConsecutive = localB === (localA + 1) % 4 || localA === (localB + 1) % 4
+
+          if (!isConsecutive) return // Skip diagonal edges
+
+          // Normalize so that localB = (localA + 1) % 4
+          let normA = localA
+          let normB = localB
+          if (localA === (localB + 1) % 4) {
+            normA = localB
+            normB = localA
+          }
+
+          // Compute midpoint of the edge (deep copy)
+          const midpoint: Vec3 = [
+            (face.vertices[normA][0] + face.vertices[normB][0]) / 2,
+            (face.vertices[normA][1] + face.vertices[normB][1]) / 2,
+            (face.vertices[normA][2] + face.vertices[normB][2]) / 2,
+          ]
+
+          const midUV: Vec2 = [
+            (face.uvs[normA][0] + face.uvs[normB][0]) / 2,
+            (face.uvs[normA][1] + face.uvs[normB][1]) / 2,
+          ]
+
+          // Find the opposite edge vertices
+          const prevA = (normA + 3) % 4
+          const nextB = (normB + 1) % 4
+
+          // Midpoint of opposite edge (deep copy)
+          const oppMidpoint: Vec3 = [
+            (face.vertices[prevA][0] + face.vertices[nextB][0]) / 2,
+            (face.vertices[prevA][1] + face.vertices[nextB][1]) / 2,
+            (face.vertices[prevA][2] + face.vertices[nextB][2]) / 2,
+          ]
+
+          const oppMidUV: Vec2 = [
+            (face.uvs[prevA][0] + face.uvs[nextB][0]) / 2,
+            (face.uvs[prevA][1] + face.uvs[nextB][1]) / 2,
+          ]
+
+          // Split into two quads
+          const face1Verts: [Vec3, Vec3, Vec3, Vec3] = [
+            [...face.vertices[normA]] as Vec3,
+            [...midpoint] as Vec3,
+            [...oppMidpoint] as Vec3,
+            [...face.vertices[prevA]] as Vec3,
+          ]
+          const face1UVs: [Vec2, Vec2, Vec2, Vec2] = [
+            [...face.uvs[normA]] as Vec2,
+            [...midUV] as Vec2,
+            [...oppMidUV] as Vec2,
+            [...face.uvs[prevA]] as Vec2,
+          ]
+
+          const face2Verts: [Vec3, Vec3, Vec3, Vec3] = [
+            [...midpoint] as Vec3,
+            [...face.vertices[normB]] as Vec3,
+            [...face.vertices[nextB]] as Vec3,
+            [...oppMidpoint] as Vec3,
+          ]
+          const face2UVs: [Vec2, Vec2, Vec2, Vec2] = [
+            [...midUV] as Vec2,
+            [...face.uvs[normB]] as Vec2,
+            [...face.uvs[nextB]] as Vec2,
+            [...oppMidUV] as Vec2,
+          ]
+
+          const newFace1: SceneFace = {
+            id: crypto.randomUUID(),
+            vertices: face1Verts,
+            tileRef: face.tileRef ? { ...face.tileRef } : null,
+            uvs: face1UVs,
+          }
+
+          const newFace2: SceneFace = {
+            id: crypto.randomUUID(),
+            vertices: face2Verts,
+            tileRef: face.tileRef ? { ...face.tileRef } : null,
+            uvs: face2UVs,
+          }
+
+          // Replace the original face with the two new faces
+          const spliceIdx = obj.faces.indexOf(face)
+          obj.faces.splice(spliceIdx, 1, newFace1, newFace2)
+
+          // Clear selections
+          state.selectedEdgeIndices = []
+          state.selectedVertexIndices = []
+        })
+        useToastStore.getState().addToast("Edge subdivided", "success")
+      },
+
       // Paint mode
-      paintFace: (objectId, faceId, tileRef, tilesetColumns, tilesetRows) =>
+      paintFace: (objectId, faceId, tileRef, tilesetColumns, tilesetRows) => {
         set((state) => {
           const obj = state.objects[objectId]
           if (!obj) return
@@ -337,7 +500,9 @@ export const useSceneStore = create<SceneState>()(
           if (!face) return
           face.tileRef = tileRef
           face.uvs = computeTileUVs(tileRef, tilesetColumns, tilesetRows)
-        }),
+        })
+        useToastStore.getState().addToast("Face painted", "success")
+      },
 
       updateFaceUVs: (objectId, faceId, uvs) =>
         set((state) => {
@@ -366,6 +531,7 @@ export const useSceneStore = create<SceneState>()(
           state.objects[id] = obj
           state.objectOrder.push(id)
         })
+        useToastStore.getState().addToast("Tile placed", "success")
         return id
       },
     })),
