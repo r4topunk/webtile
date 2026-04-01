@@ -60,7 +60,8 @@ function VertexDots({ obj }: { obj: SceneObject }) {
   const dragOriginRef = useRef(new THREE.Vector3())
   const dragPlaneRef = useRef(new THREE.Plane())
   const appliedRef = useRef(new THREE.Vector3())
-  const axisLockRef = useRef<"x" | "y" | "z" | null>(null)
+  const activeLockRef = useRef<"x" | "y" | "z" | null>(null)
+  const lastPlaneKeyRef = useRef<string | null>(null) // track which plane/axis rebuilt the drag plane
   const keyStateRef = useRef({ shift: false, ctrl: false, x: false, y: false, z: false })
 
   const vertices = useMemo(() => {
@@ -76,18 +77,52 @@ function VertexDots({ obj }: { obj: SceneObject }) {
   }, [obj.faces])
 
   /**
-   * Build the drag constraint plane from the active placement plane.
-   * XZ → normal +Y, XY → normal +Z, YZ → normal +X.
-   * The plane passes through the clicked vertex world position.
+   * Build a drag plane that allows movement along the given axis/axes.
+   *
+   * For 2D (placement plane): normal is perpendicular to the plane.
+   * For single axis: build a plane containing that axis, facing the camera
+   * as much as possible (maximizes mouse sensitivity).
    */
-  function buildDragPlane(worldPoint: THREE.Vector3): THREE.Plane {
-    const placementPlane = useEditorStore.getState().placementPlane
+  function buildPlaneForAxes(
+    worldPoint: THREE.Vector3,
+    mode: "placement" | "x" | "y" | "z",
+  ): THREE.Plane {
     let normal: THREE.Vector3
-    switch (placementPlane) {
-      case "xz": normal = new THREE.Vector3(0, 1, 0); break
-      case "xy": normal = new THREE.Vector3(0, 0, 1); break
-      case "yz": normal = new THREE.Vector3(1, 0, 0); break
+
+    if (mode === "placement") {
+      const pp = useEditorStore.getState().placementPlane
+      switch (pp) {
+        case "xz": normal = new THREE.Vector3(0, 1, 0); break
+        case "xy": normal = new THREE.Vector3(0, 0, 1); break
+        case "yz": normal = new THREE.Vector3(1, 0, 0); break
+      }
+    } else {
+      // For single-axis constraint: build a plane that contains the target
+      // axis and faces the camera. This gives maximum mouse sensitivity.
+      //
+      // Method: take camera direction, remove the component along the
+      // target axis, use the remainder as the plane normal.
+      const cameraDir = new THREE.Vector3()
+      camera.getWorldDirection(cameraDir)
+
+      const axis = mode === "x" ? new THREE.Vector3(1, 0, 0)
+        : mode === "y" ? new THREE.Vector3(0, 1, 0)
+        : new THREE.Vector3(0, 0, 1)
+
+      // Remove axis component from camera direction
+      normal = cameraDir.clone().sub(
+        axis.clone().multiplyScalar(cameraDir.dot(axis))
+      )
+
+      // If camera is looking straight along the axis, fall back to a
+      // perpendicular plane
+      if (normal.lengthSq() < 0.001) {
+        // Use world up or right as fallback
+        normal = mode === "y" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0)
+      }
+      normal.normalize()
     }
+
     return new THREE.Plane().setFromNormalAndCoplanarPoint(normal, worldPoint)
   }
 
@@ -113,10 +148,11 @@ function VertexDots({ obj }: { obj: SceneObject }) {
       }
 
       const worldPoint = e.point.clone()
-      dragPlaneRef.current = buildDragPlane(worldPoint)
+      dragPlaneRef.current = buildPlaneForAxes(worldPoint, "placement")
       dragOriginRef.current.copy(worldPoint)
       appliedRef.current.set(0, 0, 0)
-      axisLockRef.current = null
+      activeLockRef.current = null
+      lastPlaneKeyRef.current = "placement"
       draggingRef.current = true
 
       ;(e.nativeEvent.target as HTMLElement).setPointerCapture(e.nativeEvent.pointerId)
@@ -124,49 +160,53 @@ function VertexDots({ obj }: { obj: SceneObject }) {
     [camera, selectedSet],
   )
 
-  /**
-   * Drag on the active placement plane.
-   *
-   * Default: free 2D movement on the active plane (XZ/XY/YZ).
-   * Press X/Y/Z during drag: lock to that single axis.
-   * Shift during drag: auto-detect dominant axis from movement.
-   * Snap: rounds to grid when enabled.
-   *
-   * The movement is naturally constrained to 2 axes by the plane,
-   * and axis keys further constrain to 1 axis.
-   */
   useFrame(() => {
     if (!draggingRef.current) return
+
+    const keys = keyStateRef.current
+
+    // Determine current axis mode
+    let currentMode: "placement" | "x" | "y" | "z" = "placement"
+    if (keys.x) currentMode = "x"
+    else if (keys.y) currentMode = "y"
+    else if (keys.z) currentMode = "z"
+
+    // Rebuild drag plane if axis mode changed (key pressed/released mid-drag)
+    const modeKey = currentMode
+    if (modeKey !== lastPlaneKeyRef.current) {
+      // Rebuild plane at current drag origin, reset applied delta
+      dragPlaneRef.current = buildPlaneForAxes(dragOriginRef.current, currentMode)
+      appliedRef.current.set(0, 0, 0)
+      lastPlaneKeyRef.current = modeKey
+    }
 
     const intersection = raycastDragPlane()
     if (!intersection) return
 
     const rawDelta = intersection.clone().sub(dragOriginRef.current)
-    const keys = keyStateRef.current
 
-    // Explicit axis lock via X/Y/Z keys (like Blender)
-    if (keys.x) axisLockRef.current = "x"
-    else if (keys.y) axisLockRef.current = "y"
-    else if (keys.z) axisLockRef.current = "z"
-    // Shift: auto-detect dominant axis
-    else if (keys.shift) {
+    // Determine axis lock
+    let axisLock: "x" | "y" | "z" | null = null
+    if (currentMode !== "placement") {
+      axisLock = currentMode
+    } else if (keys.shift) {
+      // Auto-detect dominant axis
       const ax = Math.abs(rawDelta.x)
       const ay = Math.abs(rawDelta.y)
       const az = Math.abs(rawDelta.z)
       const max = Math.max(ax, ay, az)
       if (max > 0.05) {
-        if (max === ax) axisLockRef.current = "x"
-        else if (max === ay) axisLockRef.current = "y"
-        else axisLockRef.current = "z"
+        if (max === ax) axisLock = "x"
+        else if (max === ay) axisLock = "y"
+        else axisLock = "z"
       }
-    } else {
-      axisLockRef.current = null
     }
+    activeLockRef.current = axisLock
 
     // Apply axis constraint
     let constrained = rawDelta.clone()
-    if (axisLockRef.current) {
-      switch (axisLockRef.current) {
+    if (axisLock) {
+      switch (axisLock) {
         case "x": constrained.set(rawDelta.x, 0, 0); break
         case "y": constrained.set(0, rawDelta.y, 0); break
         case "z": constrained.set(0, 0, rawDelta.z); break
@@ -208,7 +248,8 @@ function VertexDots({ obj }: { obj: SceneObject }) {
 
   const handlePointerUp = useCallback(() => {
     draggingRef.current = false
-    axisLockRef.current = null
+    activeLockRef.current = null
+    lastPlaneKeyRef.current = null
   }, [])
 
   useEffect(() => {
