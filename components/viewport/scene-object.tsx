@@ -165,17 +165,30 @@ function VertexDots({ obj }: { obj: SceneObject }) {
 
     const keys = keyStateRef.current
 
-    // Determine current axis mode
+    // Determine current axis mode from keys
     let currentMode: "placement" | "x" | "y" | "z" = "placement"
     if (keys.x) currentMode = "x"
     else if (keys.y) currentMode = "y"
     else if (keys.z) currentMode = "z"
+    // Shift: use camera-perpendicular plane for auto-detect (gives all 3 axes)
+    else if (keys.shift) currentMode = "camera"  as any // special mode below
 
-    // Rebuild drag plane if axis mode changed (key pressed/released mid-drag)
-    const modeKey = currentMode
+    // For Shift mode: use a camera-perpendicular plane so we can detect
+    // movement on any axis, then lock to the dominant one
+    const modeKey = keys.shift ? "camera" : currentMode
     if (modeKey !== lastPlaneKeyRef.current) {
-      // Rebuild plane at current drag origin, reset applied delta
-      dragPlaneRef.current = buildPlaneForAxes(dragOriginRef.current, currentMode)
+      if (modeKey === "camera") {
+        // Camera-facing plane through drag origin — gives all 3 axes
+        const cameraDir = new THREE.Vector3()
+        camera.getWorldDirection(cameraDir)
+        dragPlaneRef.current = new THREE.Plane()
+          .setFromNormalAndCoplanarPoint(cameraDir, dragOriginRef.current)
+      } else {
+        dragPlaneRef.current = buildPlaneForAxes(
+          dragOriginRef.current,
+          currentMode as "placement" | "x" | "y" | "z",
+        )
+      }
       appliedRef.current.set(0, 0, 0)
       lastPlaneKeyRef.current = modeKey
     }
@@ -187,10 +200,10 @@ function VertexDots({ obj }: { obj: SceneObject }) {
 
     // Determine axis lock
     let axisLock: "x" | "y" | "z" | null = null
-    if (currentMode !== "placement") {
+    if (currentMode === "x" || currentMode === "y" || currentMode === "z") {
       axisLock = currentMode
     } else if (keys.shift) {
-      // Auto-detect dominant axis
+      // Auto-detect dominant axis from camera-plane movement
       const ax = Math.abs(rawDelta.x)
       const ay = Math.abs(rawDelta.y)
       const az = Math.abs(rawDelta.z)
