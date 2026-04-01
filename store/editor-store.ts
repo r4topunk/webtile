@@ -50,7 +50,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   exportDialogOpen: false,
   importDialogOpen: false,
   snapEnabled: true,
-  snapSize: 1,
+  snapSize: 0.5,
   cameraPreset: null,
   showTimeline: false,
   focusTarget: null,
