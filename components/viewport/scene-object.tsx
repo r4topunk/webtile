@@ -294,22 +294,39 @@ function VertexDots({ obj }: { obj: SceneObject }) {
 
   return (
     <>
-      {vertices.map((v) => (
-        <mesh
-          key={v.index}
-          position={v.pos}
-          renderOrder={999}
-          onPointerDown={(e) => handlePointerDown(e, v.index)}
-          onPointerUp={handlePointerUp}
-        >
-          <sphereGeometry args={[0.06, 8, 8]} />
-          <meshBasicMaterial
-            color={selectedSet.has(v.index) ? "#ff4400" : "#44aaff"}
-            depthTest={false}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
+      {vertices.map((v) => {
+        const isVtxSelected = selectedSet.has(v.index)
+        return (
+          <group key={v.index} position={v.pos}>
+            {/* Outer ring for visibility */}
+            <mesh renderOrder={998}>
+              <ringGeometry args={[0.09, 0.12, 16]} />
+              <meshBasicMaterial
+                color={isVtxSelected ? "#ff4400" : "#2288dd"}
+                side={THREE.DoubleSide}
+                depthTest={false}
+                depthWrite={false}
+                transparent
+                opacity={0.8}
+              />
+            </mesh>
+            {/* Inner dot — clickable */}
+            <mesh
+              renderOrder={999}
+              onPointerDown={(e) => handlePointerDown(e, v.index)}
+              onPointerUp={handlePointerUp}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <sphereGeometry args={[0.1, 12, 12]} />
+              <meshBasicMaterial
+                color={isVtxSelected ? "#ff6622" : "#44aaff"}
+                depthTest={false}
+                depthWrite={false}
+              />
+            </mesh>
+          </group>
+        )
+      })}
     </>
   )
 }
@@ -482,6 +499,13 @@ export function SceneObjectMesh({ obj, isSelected }: SceneObjectMeshProps) {
       if ((mode === "face" || mode === "vertex" || mode === "edge") && !isSelected) {
         e.stopPropagation()
         useSceneStore.getState().setSelection([obj.id])
+        return
+      }
+
+      // In vertex/edge mode with object selected, stop propagation
+      // to prevent SceneClickCatcher from clearing the selection
+      if ((mode === "vertex" || mode === "edge") && isSelected) {
+        e.stopPropagation()
         return
       }
     },
