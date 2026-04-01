@@ -95,12 +95,12 @@ function makeTextTexture(text: string, color: string): THREE.CanvasTexture {
 export function AxisGizmo({ quaternionRef }: { quaternionRef: React.RefObject<THREE.Quaternion> }) {
   return (
     <div
-      className="pointer-events-none absolute bottom-2 left-2 overflow-hidden rounded"
-      style={{ width: 80, height: 80 }}
+      className="pointer-events-none absolute bottom-2 left-2 rounded"
+      style={{ width: 100, height: 100 }}
     >
       <Canvas
         orthographic
-        camera={{ zoom: 40, position: [0, 0, 3], near: 0.1, far: 100 }}
+        camera={{ zoom: 28, position: [0, 0, 3], near: 0.1, far: 100 }}
         style={{ background: "transparent" }}
         gl={{ alpha: true, antialias: true }}
       >
