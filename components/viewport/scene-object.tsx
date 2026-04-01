@@ -138,7 +138,8 @@ function VertexDots({ obj }: { obj: SceneObject }) {
       e.stopPropagation()
       const store = useSceneStore.getState()
 
-      if (e.nativeEvent.shiftKey) {
+      // Ctrl/Cmd+click = multi-select (Shift is reserved for axis constraint)
+      if (e.nativeEvent.ctrlKey || e.nativeEvent.metaKey) {
         store.toggleVertexSelection(index)
         return
       }
