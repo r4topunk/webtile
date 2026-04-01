@@ -8,6 +8,8 @@ import { useEditorStore } from "@/store/editor-store"
 import type { CameraPreset } from "@/store/editor-store"
 import { Scene } from "./scene"
 import { AnimationPlayer } from "@/components/animation/animation-player"
+import { AxisGizmo } from "./axis-gizmo"
+import { CameraSync } from "./camera-sync"
 
 const CAMERA_PRESETS: Record<
   Exclude<CameraPreset, null>,
@@ -203,6 +205,7 @@ function TrackpadHandler() {
 
 export function Viewport() {
   const cameraType = useEditorStore((s) => s.cameraType)
+  const cameraQuaternionRef = useRef(new THREE.Quaternion())
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-neutral-900">
@@ -233,10 +236,12 @@ export function Viewport() {
         />
         <TrackpadHandler />
         <FocusAnimator />
+        <CameraSync quaternionRef={cameraQuaternionRef} />
         <Scene />
         <AnimationPlayer />
         <CameraPresetAnimator />
       </Canvas>
+      <AxisGizmo quaternionRef={cameraQuaternionRef} />
     </div>
   )
 }
